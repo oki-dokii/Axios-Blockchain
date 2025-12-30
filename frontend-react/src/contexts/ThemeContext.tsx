@@ -14,9 +14,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (typeof window !== 'undefined') {
             const stored = localStorage.getItem('theme');
             if (stored === 'dark' || stored === 'light') return stored;
-            if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+            if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
         }
-        return 'light';
+        return 'dark';
     });
 
     useEffect(() => {

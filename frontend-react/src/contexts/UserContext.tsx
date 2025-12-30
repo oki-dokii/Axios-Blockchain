@@ -34,20 +34,20 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const initializedRef = useRef<boolean | null>(null);
-    
+
     // Get wallet connection status - use context directly (WalletProvider wraps UserProvider in App.tsx)
     const walletContext = useContext(WalletContext);
     const isConnected = walletContext?.isConnected ?? false;
 
     const logout = useCallback(() => {
-        localStorage.removeItem('ecocred_token');
+        localStorage.removeItem('ecoledger_token');
         api.clearToken();
         setUser(null);
     }, []);
 
     const login = useCallback((userData: User, token: string) => {
         console.log('[UserContext] Login called with:', { userData, token: token.substring(0, 20) + '...' });
-        localStorage.setItem('ecocred_token', token);
+        localStorage.setItem('ecoledger_token', token);
         api.setToken(token);
         const userWithToken = { ...userData, token };
         console.log('[UserContext] Setting user state:', userWithToken);
@@ -58,7 +58,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     // Initialize from localStorage on mount
     if (initializedRef.current === null) {
         initializedRef.current = true;
-        const token = localStorage.getItem('ecocred_token');
+        const token = localStorage.getItem('ecoledger_token');
         if (token) {
             api.setToken(token);
         }

@@ -75,7 +75,7 @@ export const generateToken = (userId: string, role: string, walletAddress?: stri
 
 // Generate nonce message for signing
 export const generateNonceMessage = (walletAddress: string, nonce: string): string => {
-    return `Sign this message to authenticate with EcoCred:\n\nWallet: ${walletAddress}\nNonce: ${nonce}\n\nThis request will not trigger a blockchain transaction or cost any gas fees.`;
+    return `Sign this message to authenticate with EcoLedger:\n\nWallet: ${walletAddress}\nNonce: ${nonce}\n\nThis request will not trigger a blockchain transaction or cost any gas fees.`;
 };
 
 // Role-based access control middleware

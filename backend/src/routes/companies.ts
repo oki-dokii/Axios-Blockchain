@@ -59,7 +59,7 @@ router.get(
             }),
             prisma.action.groupBy({
                 by: ['companyId'],
-                where: { 
+                where: {
                     companyId: { in: companyIds },
                     status: 'VERIFIED'
                 },
@@ -79,7 +79,7 @@ router.get(
         }));
 
         res.json({
-            companies: companiesWithStats,
+            data: companiesWithStats,
             pagination: {
                 page,
                 limit,

@@ -5,8 +5,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = "postgresql://neondb_owner:npg_ezJ1TOQbl7NB@ep-solitary-field-a1tnzlw1-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 // User roles enum

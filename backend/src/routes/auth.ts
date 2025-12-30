@@ -50,162 +50,153 @@ router.post(
         body('walletAddress').isEthereumAddress(),
         body('signature').isString().notEmpty(),
         body('message').isString().notEmpty(),
+        // Email/pass/name are optional now, used if we need to upgrade/create
         body('email').optional().isEmail().normalizeEmail(),
         body('password').optional().isString().isLength({ min: 8 }),
         body('name').optional().isString()
     ],
-    async (req, res: Response) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            const errorMessages = errors.array().map(err => `${err.type === 'field' ? err.path : 'field'}: ${err.msg}`).join(', ');
-            throw new AppError(`Validation failed: ${errorMessages}`, 400);
-        }
-
-        const { walletAddress, signature, message, email, password, name } = req.body;
-        const normalizedAddress = walletAddress.toLowerCase();
-
-        // Verify nonce exists
-        const nonceData = nonces.get(normalizedAddress);
-        if (!nonceData) {
-            throw new AppError('Nonce not found or expired', 400);
-        }
-
-        // Verify signature
-        const isValid = await verifySignature(walletAddress, signature, message);
-        if (!isValid) {
-            throw new AppError('Invalid signature', 401);
-        }
-
-        // Delete used nonce
-        nonces.delete(normalizedAddress);
-
-        // Check if user exists with this wallet
-        let user = await prisma.user.findUnique({
-            where: { walletAddress: normalizedAddress },
-            include: { company: true }
-        });
-
-        if (!user) {
-            // New user - require email and password
-            if (!email || !password) {
-                throw new AppError('Email and password are required for new users', 400);
+    async (req: AuthRequest, res: Response, next) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                const errorMessages = errors.array().map(err => `${err.type === 'field' ? err.path : 'field'}: ${err.msg}`).join(', ');
+                throw new AppError(`Validation failed: ${errorMessages}`, 400);
             }
 
-            // Validate email format
-            if (!validateEmail(email)) {
-                throw new AppError('Invalid email format', 400);
+            const { walletAddress, signature, message, email, password, name } = req.body;
+            const normalizedAddress = walletAddress.toLowerCase();
+
+            // Verify nonce exists
+            const nonceData = nonces.get(normalizedAddress);
+            if (!nonceData) {
+                throw new AppError('Nonce not found or expired', 400);
             }
 
-            // Validate password strength
-            const passwordValidation = validatePassword(password);
-            if (!passwordValidation.valid) {
-                throw new AppError(passwordValidation.message || 'Invalid password', 400);
+            // Verify signature
+            const isValid = await verifySignature(walletAddress, signature, message);
+            if (!isValid) {
+                throw new AppError('Invalid signature', 401);
             }
 
-            // Check if email is already registered
-            const existingUserByEmail = await prisma.user.findUnique({
-                where: { email }
-            });
+            // Delete used nonce
+            nonces.delete(normalizedAddress);
 
-            if (existingUserByEmail) {
-                throw new AppError('Email already registered', 409);
-            }
-
-            // Hash password
-            const passwordHash = await hashPassword(password);
-            const verificationToken = generateVerificationToken();
-
-            // Check if company exists (legacy data)
-            let company = await prisma.company.findUnique({
-                where: { walletAddress: normalizedAddress }
-            });
-
-            if (!company) {
-                // Create new company
-                company = await prisma.company.create({
-                    data: {
-                        walletAddress: normalizedAddress,
-                        name: name || `Company ${normalizedAddress.substring(0, 8)}...`
-                    }
-                });
-            }
-
-            // Create user with both wallet and email/password
-            user = await prisma.user.create({
-                data: {
-                    walletAddress: normalizedAddress,
-                    email,
-                    passwordHash,
-                    companyId: company.id,
-                    role: 'COMPANY',
-                    verificationToken,
-                    emailVerified: false
-                },
+            // Check if user exists with this wallet
+            let user = await prisma.user.findUnique({
+                where: { walletAddress: normalizedAddress },
                 include: { company: true }
             });
-        } else {
-            // Existing user - check if they have email/password
-            if (!user.email || !user.passwordHash) {
-                // User exists but missing email/password - require them
-                if (!email || !password) {
-                    throw new AppError('Email and password are required to complete your profile', 400);
-                }
 
-                // Validate email format
-                if (!validateEmail(email)) {
-                    throw new AppError('Invalid email format', 400);
-                }
+            if (!user) {
+                // Auto-register new wallet users
+                const placeholderEmail = `${normalizedAddress}@wallet.placeholder`;
+                const placeholderPassword = crypto.randomBytes(16).toString('hex');
+                const passwordHash = await hashPassword(placeholderPassword);
+                const verificationToken = generateVerificationToken();
+                const generatedName = name || `User ${normalizedAddress.substring(0, 6)}...`;
 
-                // Validate password strength
-                const passwordValidation = validatePassword(password);
-                if (!passwordValidation.valid) {
-                    throw new AppError(passwordValidation.message || 'Invalid password', 400);
-                }
-
-                // Check if email is already registered by another user
-                const existingUserByEmail = await prisma.user.findUnique({
-                    where: { email }
+                // Create new company logic
+                let company = await prisma.company.findUnique({
+                    where: { walletAddress: normalizedAddress }
                 });
 
-                if (existingUserByEmail && existingUserByEmail.id !== user.id) {
-                    throw new AppError('Email already registered', 409);
+                if (!company) {
+                    company = await prisma.company.create({
+                        data: {
+                            walletAddress: normalizedAddress,
+                            name: `Company ${normalizedAddress.substring(0, 8)}...`
+                        }
+                    });
                 }
 
-                // Hash password and update user
-                const passwordHash = await hashPassword(password);
-                const verificationToken = generateVerificationToken();
-
-                user = await prisma.user.update({
-                    where: { id: user.id },
+                // Create user WITHOUT invalid 'name' field
+                user = await prisma.user.create({
                     data: {
-                        email,
+                        walletAddress: normalizedAddress,
+                        email: email || placeholderEmail,
                         passwordHash,
+                        companyId: company.id,
+                        role: 'COMPANY',
                         verificationToken,
                         emailVerified: false
                     },
                     include: { company: true }
                 });
+            } else {
+                // Existing user - check if they have email/password
+                // If they have placeholders, that counts as having them, so we just log them in.
+                // Only if they are a legacy user with NULLs do we strictly require updates,
+                // BUT for a smooth demo, we might want to be lenient.
+                // For now, let's keep the strict check only if they are truly missing data.
+
+                if (!user.email || !user.passwordHash) {
+                    // This block runs if user exists but has no email/pass (legacy state)
+                    if (!email || !password) {
+                        // For the demo, let's just auto-fill them too instead of throwing error!
+                        // This prevents "stuck" legacy users.
+                        const placeholderEmail = `${normalizedAddress}@wallet.placeholder`;
+                        const placeholderPassword = crypto.randomBytes(16).toString('hex');
+                        const passwordHash = await hashPassword(placeholderPassword);
+                        const verificationToken = generateVerificationToken();
+
+                        user = await prisma.user.update({
+                            where: { id: user.id },
+                            data: {
+                                email: placeholderEmail,
+                                passwordHash,
+                                verificationToken,
+                                emailVerified: false
+                            },
+                            include: { company: true }
+                        });
+                    } else {
+                        // User provided email/pass to upgrade account
+                        // Validate & Update logic...
+                        if (!validateEmail(email)) throw new AppError('Invalid email format', 400);
+                        const passwordValidation = validatePassword(password);
+                        if (!passwordValidation.valid) throw new AppError(passwordValidation.message || 'Invalid password', 400);
+
+                        const existingUserByEmail = await prisma.user.findUnique({ where: { email } });
+                        if (existingUserByEmail && existingUserByEmail.id !== user.id) throw new AppError('Email already registered', 409);
+
+                        const passwordHash = await hashPassword(password);
+                        const verificationToken = generateVerificationToken();
+
+                        user = await prisma.user.update({
+                            where: { id: user.id },
+                            data: {
+                                email,
+                                passwordHash,
+                                verificationToken,
+                                emailVerified: false
+                            },
+                            include: { company: true }
+                        });
+                    }
+                }
             }
+
+            // Generate JWT token
+            const token = generateToken(user.id, user.role, normalizedAddress);
+
+            res.json({
+                token,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                    walletAddress: user.walletAddress,
+                    emailVerified: user.emailVerified,
+                    company: user.company ? {
+                        id: user.company.id,
+                        name: user.company.name,
+                        verified: user.company.verified
+                    } : null
+                }
+            });
+        } catch (error) {
+            next(error);
         }
-
-        // Generate JWT token
-        const token = generateToken(user.id, user.role, normalizedAddress);
-
-        res.json({
-            token,
-            user: {
-                id: user.id,
-                email: user.email,
-                role: user.role,
-                walletAddress: user.walletAddress,
-                emailVerified: user.emailVerified,
-                company: user.company ? {
-                    id: user.company.id,
-                    name: user.company.name,
-                    verified: user.company.verified
-                } : null
-            }
-        });
     }
 );
 
@@ -223,111 +214,115 @@ router.post(
         body('name').optional().isString(),
         body('role').optional().isIn(['COMPANY', 'VERIFIER', 'ADMIN', 'AUDITOR'])
     ],
-    async (req, res: Response) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            const errorMessages = errors.array().map(err => `${err.type === 'field' ? err.path : 'field'}: ${err.msg}`).join(', ');
-            throw new AppError(`Validation failed: ${errorMessages}`, 400);
-        }
-
-        const { email, password, walletAddress, name, role } = req.body;
-        const normalizedAddress = walletAddress.toLowerCase();
-
-        // Validate email format
-        if (!validateEmail(email)) {
-            throw new AppError('Invalid email format', 400);
-        }
-
-        // Validate password strength
-        const passwordValidation = validatePassword(password);
-        if (!passwordValidation.valid) {
-            throw new AppError(passwordValidation.message || 'Invalid password', 400);
-        }
-
-        // Check if user already exists with email
-        const existingUserByEmail = await prisma.user.findUnique({
-            where: { email }
-        });
-
-        if (existingUserByEmail) {
-            throw new AppError('Email already registered', 409);
-        }
-
-        // Check if user already exists with wallet address
-        const existingUserByWallet = await prisma.user.findUnique({
-            where: { walletAddress: normalizedAddress }
-        });
-
-        if (existingUserByWallet) {
-            throw new AppError('Wallet address already registered', 409);
-        }
-
-        // Hash password
-        const passwordHash = await hashPassword(password);
-        const verificationToken = generateVerificationToken();
-
-        // Create user with both email and wallet
-        const user = await prisma.user.create({
-            data: {
-                email,
-                passwordHash,
-                walletAddress: normalizedAddress,
-                role: role || 'COMPANY',
-                verificationToken,
-                emailVerified: false
+    async (req, res: Response, next) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                const errorMessages = errors.array().map(err => `${err.type === 'field' ? err.path : 'field'}: ${err.msg}`).join(', ');
+                throw new AppError(`Validation failed: ${errorMessages}`, 400);
             }
-        });
 
-        // If role is COMPANY, create a company profile
-        if (user.role === 'COMPANY') {
-            // Check if company exists with this wallet
-            let company = await prisma.company.findUnique({
+            const { email, password, walletAddress, name, role } = req.body;
+            const normalizedAddress = walletAddress.toLowerCase();
+
+            // Validate email format
+            if (!validateEmail(email)) {
+                throw new AppError('Invalid email format', 400);
+            }
+
+            // Validate password strength
+            const passwordValidation = validatePassword(password);
+            if (!passwordValidation.valid) {
+                throw new AppError(passwordValidation.message || 'Invalid password', 400);
+            }
+
+            // Check if user already exists with email
+            const existingUserByEmail = await prisma.user.findUnique({
+                where: { email }
+            });
+
+            if (existingUserByEmail) {
+                throw new AppError('Email already registered', 409);
+            }
+
+            // Check if user already exists with wallet address
+            const existingUserByWallet = await prisma.user.findUnique({
                 where: { walletAddress: normalizedAddress }
             });
 
-            if (!company) {
-                company = await prisma.company.create({
-                    data: {
-                        walletAddress: normalizedAddress,
-                        name: name || `Company ${user.id.substring(0, 8)}`
-                    }
+            if (existingUserByWallet) {
+                throw new AppError('Wallet address already registered', 409);
+            }
+
+            // Hash password
+            const passwordHash = await hashPassword(password);
+            const verificationToken = generateVerificationToken();
+
+            // Create user with both email and wallet
+            const user = await prisma.user.create({
+                data: {
+                    email,
+                    passwordHash,
+                    walletAddress: normalizedAddress,
+                    role: role || 'COMPANY',
+                    verificationToken,
+                    emailVerified: false
+                }
+            });
+
+            // If role is COMPANY, create a company profile
+            if (user.role === 'COMPANY') {
+                // Check if company exists with this wallet
+                let company = await prisma.company.findUnique({
+                    where: { walletAddress: normalizedAddress }
+                });
+
+                if (!company) {
+                    company = await prisma.company.create({
+                        data: {
+                            walletAddress: normalizedAddress,
+                            name: name || `Company ${user.id.substring(0, 8)}`
+                        }
+                    });
+                }
+
+                // Link user to company
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { companyId: company.id }
                 });
             }
 
-            // Link user to company
-            await prisma.user.update({
+            const userWithCompany = await prisma.user.findUnique({
                 where: { id: user.id },
-                data: { companyId: company.id }
+                include: { company: true }
             });
-        }
 
-        const userWithCompany = await prisma.user.findUnique({
-            where: { id: user.id },
-            include: { company: true }
-        });
-
-        if (!userWithCompany) {
-            throw new AppError('Failed to load user profile after registration', 500);
-        }
-
-        // Generate JWT token
-        const token = generateToken(userWithCompany.id, userWithCompany.role, normalizedAddress);
-
-        res.status(201).json({
-            token,
-            user: {
-                id: userWithCompany.id,
-                email: userWithCompany.email,
-                role: userWithCompany.role,
-                walletAddress: userWithCompany.walletAddress,
-                emailVerified: userWithCompany.emailVerified,
-                company: userWithCompany.company ? {
-                    id: userWithCompany.company.id,
-                    name: userWithCompany.company.name,
-                    verified: userWithCompany.company.verified
-                } : null
+            if (!userWithCompany) {
+                throw new AppError('Failed to load user profile after registration', 500);
             }
-        });
+
+            // Generate JWT token
+            const token = generateToken(userWithCompany.id, userWithCompany.role, normalizedAddress);
+
+            res.status(201).json({
+                token,
+                user: {
+                    id: userWithCompany.id,
+                    email: userWithCompany.email,
+                    role: userWithCompany.role,
+                    walletAddress: userWithCompany.walletAddress,
+                    emailVerified: userWithCompany.emailVerified,
+                    company: userWithCompany.company ? {
+                        id: userWithCompany.company.id,
+                        name: userWithCompany.company.name,
+                        verified: userWithCompany.company.verified
+                    } : null
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
     }
 );
 
@@ -340,120 +335,124 @@ router.post(
         body('password').isString(),
         body('walletAddress').optional().isEthereumAddress()
     ],
-    async (req, res: Response) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            const errorMessages = errors.array().map(err => `${err.type === 'field' ? err.path : 'field'}: ${err.msg}`).join(', ');
-            throw new AppError(`Validation failed: ${errorMessages}`, 400);
-        }
-
-        const { email, password, walletAddress } = req.body;
-
-        // Find user
-        const user = await prisma.user.findUnique({
-            where: { email },
-            include: { company: true }
-        });
-
-        if (!user || !user.passwordHash) {
-            throw new AppError('Invalid credentials', 401);
-        }
-
-        // Verify password
-        const isValidPassword = await comparePassword(password, user.passwordHash);
-        if (!isValidPassword) {
-            throw new AppError('Invalid credentials', 401);
-        }
-
-        // Check if user has wallet address
-        if (!user.walletAddress) {
-            // User exists but missing wallet address - require it
-            if (!walletAddress) {
-                throw new AppError('Wallet address is required to complete your profile', 400);
+    async (req, res: Response, next) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                const errorMessages = errors.array().map(err => `${err.type === 'field' ? err.path : 'field'}: ${err.msg}`).join(', ');
+                throw new AppError(`Validation failed: ${errorMessages}`, 400);
             }
 
-            const normalizedAddress = walletAddress.toLowerCase();
+            const { email, password, walletAddress } = req.body;
 
-            // Check if wallet is already registered by another user
-            const existingUserByWallet = await prisma.user.findUnique({
-                where: { walletAddress: normalizedAddress }
-            });
-
-            if (existingUserByWallet && existingUserByWallet.id !== user.id) {
-                throw new AppError('Wallet address already registered', 409);
-            }
-
-            // Update user with wallet address
-            await prisma.user.update({
-                where: { id: user.id },
-                data: { walletAddress: normalizedAddress }
-            });
-
-            // If user has a company, update company wallet address
-            if (user.company) {
-                await prisma.company.update({
-                    where: { id: user.company.id },
-                    data: { walletAddress: normalizedAddress }
-                });
-            } else if (user.role === 'COMPANY') {
-                // Create company if doesn't exist
-                const company = await prisma.company.create({
-                    data: {
-                        walletAddress: normalizedAddress,
-                        name: `Company ${user.id.substring(0, 8)}`
-                    }
-                });
-
-                await prisma.user.update({
-                    where: { id: user.id },
-                    data: { companyId: company.id }
-                });
-            }
-
-            // Fetch updated user
-            const updatedUser = await prisma.user.findUnique({
-                where: { id: user.id },
+            // Find user
+            const user = await prisma.user.findUnique({
+                where: { email },
                 include: { company: true }
             });
 
-            if (updatedUser) {
-                const token = generateToken(updatedUser.id, updatedUser.role, normalizedAddress);
-                return res.json({
-                    token,
-                    user: {
-                        id: updatedUser.id,
-                        email: updatedUser.email,
-                        role: updatedUser.role,
-                        walletAddress: updatedUser.walletAddress,
-                        emailVerified: updatedUser.emailVerified,
-                        company: updatedUser.company ? {
-                            id: updatedUser.company.id,
-                            name: updatedUser.company.name,
-                            verified: updatedUser.company.verified
-                        } : null
-                    }
+            if (!user || !user.passwordHash) {
+                throw new AppError('Invalid credentials', 401);
+            }
+
+            // Verify password
+            const isValidPassword = await comparePassword(password, user.passwordHash);
+            if (!isValidPassword) {
+                throw new AppError('Invalid credentials', 401);
+            }
+
+            // Check if user has wallet address
+            if (!user.walletAddress) {
+                // User exists but missing wallet address - require it
+                if (!walletAddress) {
+                    throw new AppError('Wallet address is required to complete your profile', 400);
+                }
+
+                const normalizedAddress = walletAddress.toLowerCase();
+
+                // Check if wallet is already registered by another user
+                const existingUserByWallet = await prisma.user.findUnique({
+                    where: { walletAddress: normalizedAddress }
                 });
+
+                if (existingUserByWallet && existingUserByWallet.id !== user.id) {
+                    throw new AppError('Wallet address already registered', 409);
+                }
+
+                // Update user with wallet address
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { walletAddress: normalizedAddress }
+                });
+
+                // If user has a company, update company wallet address
+                if (user.company) {
+                    await prisma.company.update({
+                        where: { id: user.company.id },
+                        data: { walletAddress: normalizedAddress }
+                    });
+                } else if (user.role === 'COMPANY') {
+                    // Create company if doesn't exist
+                    const company = await prisma.company.create({
+                        data: {
+                            walletAddress: normalizedAddress,
+                            name: `Company ${user.id.substring(0, 8)}`
+                        }
+                    });
+
+                    await prisma.user.update({
+                        where: { id: user.id },
+                        data: { companyId: company.id }
+                    });
+                }
+
+                // Fetch updated user
+                const updatedUser = await prisma.user.findUnique({
+                    where: { id: user.id },
+                    include: { company: true }
+                });
+
+                if (updatedUser) {
+                    const token = generateToken(updatedUser.id, updatedUser.role, normalizedAddress);
+                    return res.json({
+                        token,
+                        user: {
+                            id: updatedUser.id,
+                            email: updatedUser.email,
+                            role: updatedUser.role,
+                            walletAddress: updatedUser.walletAddress,
+                            emailVerified: updatedUser.emailVerified,
+                            company: updatedUser.company ? {
+                                id: updatedUser.company.id,
+                                name: updatedUser.company.name,
+                                verified: updatedUser.company.verified
+                            } : null
+                        }
+                    });
+                }
             }
+
+            // Generate JWT token
+            const token = generateToken(user.id, user.role, user.walletAddress || undefined);
+
+            res.json({
+                token,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                    walletAddress: user.walletAddress,
+                    emailVerified: user.emailVerified,
+                    company: user.company ? {
+                        id: user.company.id,
+                        name: user.company.name,
+                        verified: user.company.verified
+                    } : null
+                }
+            });
+        } catch (error) {
+            next(error);
         }
-
-        // Generate JWT token
-        const token = generateToken(user.id, user.role, user.walletAddress || undefined);
-
-        res.json({
-            token,
-            user: {
-                id: user.id,
-                email: user.email,
-                role: user.role,
-                walletAddress: user.walletAddress,
-                emailVerified: user.emailVerified,
-                company: user.company ? {
-                    id: user.company.id,
-                    name: user.company.name,
-                    verified: user.company.verified
-                } : null
-            }
-        });
     }
 );
 

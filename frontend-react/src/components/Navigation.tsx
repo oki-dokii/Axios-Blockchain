@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Leaf, Trophy, Award, Home, Shield, TrendingUp, Building, ShoppingBag, Wallet, Menu, X, LogIn, UserPlus } from 'lucide-react';
+import { Leaf, Trophy, Award, Home, Shield, TrendingUp, Building, ShoppingBag, Wallet, Menu, X, ChevronDown } from 'lucide-react';
 import { ConnectWallet } from './ConnectWallet';
 import { useUser } from '../contexts/UserContext';
 import { cn } from '../lib/utils';
@@ -31,142 +31,116 @@ export function Navigation() {
         : allNavItems.filter(item => item.roles.includes('COMPANY')); // Default for unauthenticated
 
     return (
-        <nav className="glass-effect shadow-lg border-b border-secondary-200/50 sticky top-0 z-50 backdrop-blur-xl">
+        <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 bg-secondary-950/70 backdrop-blur-2xl border-b border-white/5 supports-[backdrop-filter]:bg-secondary-950/50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between h-16">
-                    <motion.div 
-                        className="flex items-center"
+                <div className="flex justify-between h-20 items-center">
+                    <motion.div
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ duration: 0.5 }}
+                        className="flex items-center gap-3 cursor-pointer group"
                     >
-                        <div className="flex-shrink-0 flex items-center group cursor-pointer">
-                            <motion.div
-                                whileHover={{ rotate: 360 }}
-                                transition={{ duration: 0.6 }}
-                            >
-                                <Leaf className="h-8 w-8 text-primary-600" />
-                            </motion.div>
-                            <span className="ml-2 text-xl font-bold gradient-text">
-                                GreenLedger
-                            </span>
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/20 group-hover:scale-105 transition-transform duration-300">
+                            <Leaf className="h-6 w-6 text-white" />
                         </div>
+                        <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-secondary-400">
+                            EcoLedger
+                        </span>
                     </motion.div>
 
-                    <div className="hidden md:flex items-center space-x-2">
-                        {navItems.map((item, index) => {
+                    <div className="hidden md:flex items-center space-x-1">
+                        {/* Primary Items */}
+                        {navItems.slice(0, 4).map((item) => {
                             const Icon = item.icon;
                             const isActive = location.pathname === item.href;
                             return (
-                                <motion.div
+                                <Link
                                     key={item.href}
-                                    initial={{ opacity: 0, y: -10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: index * 0.05, duration: 0.3 }}
+                                    to={item.href}
+                                    className={cn(
+                                        "relative px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-2",
+                                        isActive
+                                            ? "text-white bg-white/10"
+                                            : "text-secondary-400 hover:text-white hover:bg-white/5"
+                                    )}
                                 >
-                                    <Link
-                                        to={item.href}
-                                        className={cn(
-                                            "relative flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300",
-                                            isActive
-                                                ? "text-primary-600 bg-primary-50"
-                                                : "text-secondary-700 hover:text-primary-600 hover:bg-primary-50/50"
-                                        )}
-                                    >
-                                        {isActive && (
-                                            <motion.div
-                                                layoutId="activeTab"
-                                                className="absolute inset-0 bg-primary-50 rounded-lg"
-                                                initial={false}
-                                                transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                                            />
-                                        )}
-                                        <Icon className={cn("h-4 w-4 mr-2 relative z-10", isActive && "text-primary-600")} />
-                                        <span className="relative z-10">{item.label}</span>
-                                    </Link>
-                                </motion.div>
+                                    <Icon className={cn("w-4 h-4", isActive ? "text-primary-400" : "text-secondary-500")} />
+                                    {item.label}
+                                </Link>
                             );
                         })}
+
+                        {/* More Dropdown */}
+                        {navItems.length > 4 && (
+                            <div className="relative group">
+                                <button className="px-4 py-2 rounded-full text-sm font-medium text-secondary-400 hover:text-white hover:bg-white/5 transition-all duration-300 flex items-center gap-2">
+                                    <span className="text-secondary-500">More</span>
+                                    <ChevronDown className="w-4 h-4 text-secondary-500 group-hover:text-white transition-colors" />
+                                </button>
+
+                                <div className="absolute top-full right-0 pt-2 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 pointer-events-none group-hover:pointer-events-auto transition-all duration-200">
+                                    <div className="bg-secondary-900/90 backdrop-blur-xl border border-white/5 rounded-2xl p-2 shadow-xl min-w-[200px] flex flex-col gap-1">
+                                        {navItems.slice(4).map((item) => {
+                                            const Icon = item.icon;
+                                            const isActive = location.pathname === item.href;
+                                            return (
+                                                <Link
+                                                    key={item.href}
+                                                    to={item.href}
+                                                    className={cn(
+                                                        "px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-3",
+                                                        isActive
+                                                            ? "text-white bg-white/10"
+                                                            : "text-secondary-400 hover:text-white hover:bg-white/5"
+                                                    )}
+                                                >
+                                                    <Icon className={cn("w-4 h-4", isActive ? "text-primary-400" : "text-secondary-500")} />
+                                                    {item.label}
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex items-center space-x-4">
                         <ConnectWallet />
-                        
+
                         {!isAuthenticated ? (
                             <>
-                                <motion.div
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
+                                <Link
+                                    to="/login"
+                                    className="hidden md:flex items-center px-6 py-2 rounded-full text-sm font-semibold text-secondary-200 border border-white/5 hover:bg-white/5 hover:border-white/20 hover:text-white transition-all backdrop-blur-sm"
                                 >
-                                    <Link
-                                        to="/login"
-                                        className="hidden md:flex items-center px-4 py-2 rounded-lg text-sm font-medium text-secondary-700 hover:text-primary-600 hover:bg-primary-50/50 transition-all duration-300"
-                                    >
-                                        <LogIn className="h-4 w-4 mr-2" />
-                                        Login
-                                    </Link>
-                                </motion.div>
-                                <motion.div
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
+                                    Log In
+                                </Link>
+                                <Link
+                                    to="/register"
+                                    className="hidden md:flex items-center px-6 py-2 rounded-full text-sm font-bold text-white bg-primary-600 hover:bg-primary-500 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 transition-all transform hover:scale-105 whitespace-nowrap"
                                 >
-                                    <Link
-                                        to="/register"
-                                        className="hidden md:flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-primary-600 to-emerald-600 hover:from-primary-700 hover:to-emerald-700 shadow-md hover:shadow-lg transition-all duration-300"
-                                    >
-                                        <UserPlus className="h-4 w-4 mr-2" />
-                                        Register
-                                    </Link>
-                                </motion.div>
+                                    Get Started
+                                </Link>
                             </>
                         ) : (
-                            <motion.div
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
+                            <button
+                                onClick={() => {
+                                    logout();
+                                    navigate('/');
+                                }}
+                                className="hidden md:flex items-center px-5 py-2.5 rounded-full text-sm font-medium text-white/70 hover:text-white hover:bg-red-500/10 hover:border-red-500/20 border border-transparent transition-all"
                             >
-                                <button
-                                    onClick={() => {
-                                        logout();
-                                        navigate('/');
-                                    }}
-                                    className="hidden md:flex items-center px-4 py-2 rounded-lg text-sm font-medium text-secondary-700 hover:text-red-600 hover:bg-red-50/50 transition-all duration-300"
-                                >
-                                    <LogIn className="h-4 w-4 mr-2" />
-                                    Logout
-                                </button>
-                            </motion.div>
+                                Logout
+                            </button>
                         )}
 
                         <motion.button
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
-                            className="md:hidden inline-flex items-center justify-center p-2 rounded-md text-secondary-600 hover:text-secondary-900 hover:bg-secondary-100"
-                            aria-label="Toggle mobile menu"
-                            whileHover={{ scale: 1.1 }}
+                            className="md:hidden p-2 text-secondary-400 hover:text-white"
                             whileTap={{ scale: 0.9 }}
                         >
-                            <AnimatePresence mode="wait">
-                                {isMenuOpen ? (
-                                    <motion.div
-                                        key="close"
-                                        initial={{ rotate: -90, opacity: 0 }}
-                                        animate={{ rotate: 0, opacity: 1 }}
-                                        exit={{ rotate: 90, opacity: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                    >
-                                        <X className="h-6 w-6" />
-                                    </motion.div>
-                                ) : (
-                                    <motion.div
-                                        key="menu"
-                                        initial={{ rotate: 90, opacity: 0 }}
-                                        animate={{ rotate: 0, opacity: 1 }}
-                                        exit={{ rotate: -90, opacity: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                    >
-                                        <Menu className="h-6 w-6" />
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
+                            {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
                         </motion.button>
                     </div>
                 </div>
@@ -175,60 +149,33 @@ export function Navigation() {
             <AnimatePresence>
                 {isMenuOpen && (
                     <motion.div
-                        className="md:hidden"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.3 }}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="md:hidden bg-secondary-950 border-b border-white/5 overflow-hidden"
                     >
-                        <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white/95 backdrop-blur-lg border-t border-secondary-200">
+                        <div className="px-4 py-6 space-y-4">
+                            {navItems.map((item) => (
+                                <Link
+                                    key={item.href}
+                                    to={item.href}
+                                    onClick={() => setIsMenuOpen(false)}
+                                    className="flex items-center gap-3 text-secondary-400 hover:text-white transition-colors"
+                                >
+                                    <item.icon className="w-5 h-5" />
+                                    {item.label}
+                                </Link>
+                            ))}
                             {!isAuthenticated && (
-                                <>
-                                    <Link
-                                        to="/login"
-                                        onClick={() => setIsMenuOpen(false)}
-                                        className="flex items-center px-3 py-2 rounded-md text-base font-medium text-secondary-700 hover:text-primary-600 hover:bg-primary-50 transition-all duration-200 mb-2"
-                                    >
-                                        <LogIn className="h-5 w-5 mr-3" />
-                                        Login
+                                <div className="pt-4 border-t border-white/5 grid grid-cols-2 gap-4">
+                                    <Link to="/login" className="text-center py-3 rounded-xl bg-white/5 text-white font-bold">
+                                        Log In
                                     </Link>
-                                    <Link
-                                        to="/register"
-                                        onClick={() => setIsMenuOpen(false)}
-                                        className="flex items-center px-3 py-2 rounded-md text-base font-medium text-white bg-gradient-to-r from-primary-600 to-emerald-600 hover:from-primary-700 hover:to-emerald-700 transition-all duration-200 mb-2"
-                                    >
-                                        <UserPlus className="h-5 w-5 mr-3" />
-                                        Register
+                                    <Link to="/register" className="text-center py-3 rounded-xl bg-primary-500 text-secondary-950 font-bold">
+                                        Sign Up
                                     </Link>
-                                    <div className="border-t border-secondary-200 my-2"></div>
-                                </>
+                                </div>
                             )}
-                            {navItems.map((item, index) => {
-                                const Icon = item.icon;
-                                const isActive = location.pathname === item.href;
-                                return (
-                                    <motion.div
-                                        key={item.href}
-                                        initial={{ opacity: 0, x: -20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: index * 0.05 }}
-                                    >
-                                        <Link
-                                            to={item.href}
-                                            onClick={() => setIsMenuOpen(false)}
-                                            className={cn(
-                                                "flex items-center px-3 py-2 rounded-md text-base font-medium transition-all duration-200",
-                                                isActive
-                                                    ? "text-primary-600 bg-primary-50"
-                                                    : "text-secondary-700 hover:text-primary-600 hover:bg-primary-50"
-                                            )}
-                                        >
-                                            <Icon className="h-5 w-5 mr-3" />
-                                            {item.label}
-                                        </Link>
-                                    </motion.div>
-                                );
-                            })}
                         </div>
                     </motion.div>
                 )}

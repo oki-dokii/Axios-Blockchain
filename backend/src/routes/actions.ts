@@ -14,30 +14,44 @@ router.get('/', async (req, res) => {
     const status = req.query.status as ActionStatus | undefined;
 
     const where: Record<string, unknown> = {};
-    
+
     // Filter by status if provided
     if (status) {
         where.status = status;
     }
-    
-    // Try to get authenticated user's wallet and filter by company
-    // If status is provided (e.g., PENDING for verifiers), show all actions with that status
-    // Otherwise, filter by company for authenticated company users
+
+    // Try to get authenticated user from token
     try {
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
-            const walletAddress = getAuthenticatedWallet(req as AuthRequest);
-            if (walletAddress) {
-                const company = await prisma.company.findUnique({
-                    where: { walletAddress },
-                    select: { id: true, walletAddress: true }
-                });
-                
-                // If status is provided (verifier/auditor viewing pending), don't filter by company
-                // Otherwise, show only their company's actions
-                if (company && !status) {
-                    where.companyId = company.id;
+            const token = authHeader.split(' ')[1];
+            // Import jwt and config if not already imported (check imports)
+            // But we can just use the verify logic inline or assume imports are valid
+            const { config } = await import('../config/app.js');
+            const jwt = (await import('jsonwebtoken')).default;
+
+            try {
+                const decoded = jwt.verify(token, config.JWT_SECRET) as { userId: string; role: string; walletAddress?: string };
+                const userRole = decoded.role;
+                const walletAddress = decoded.walletAddress;
+
+                if (walletAddress) {
+                    const company = await prisma.company.findUnique({
+                        where: { walletAddress },
+                        select: { id: true, walletAddress: true }
+                    });
+
+                    // If user is a Verifier or Auditor, they should see GLOBAL actions
+                    // So we ONLY filter by company if they are NOT a Verifier/Auditor
+                    // AND if they haven't explicitly asked for a specific status (which overrides company filter anyway)
+                    const isVerifierOrAuditor = userRole === 'VERIFIER' || userRole === 'AUDITOR' || userRole === 'ADMIN';
+
+                    if (!isVerifierOrAuditor && company && !status) {
+                        where.companyId = company.id;
+                    }
                 }
+            } catch (err) {
+                // Token invalid
             }
         }
     } catch {
@@ -45,7 +59,7 @@ router.get('/', async (req, res) => {
     }
 
     console.log(`[Actions] Fetching actions with filter:`, JSON.stringify(where, null, 2));
-    
+
     const [actions, total] = await Promise.all([
         prisma.action.findMany({
             where,
@@ -96,7 +110,7 @@ router.get('/', async (req, res) => {
             const creditsPerUnit = actionTypesMap.get(action.actionType) || 0;
             estimatedCredits = action.quantity * creditsPerUnit;
         }
-        
+
         return {
             ...action,
             type: action.actionType, // Map actionType to type
@@ -188,7 +202,7 @@ router.post(
             quantity,
             unit
         });
-        
+
         const action = await prisma.action.create({
             data: {
                 companyId: company.id,
@@ -296,7 +310,7 @@ router.post(
             const actionType = await prisma.actionType.findUnique({
                 where: { type: action.actionType }
             });
-            
+
             if (actionType) {
                 // Calculate credits based on quantity and credits per unit
                 creditsAwarded = action.quantity * (actionType.defaultCreditsPerUnit || 0);

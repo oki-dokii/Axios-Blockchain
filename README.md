@@ -1,10 +1,15 @@
-# 🌍 EcoCred: Decentralized Carbon Credit Rewards Platform
+<div align="center">
 
-A comprehensive blockchain-powered platform that brings **transparency, accountability, and gamification** to sustainability efforts. Companies log eco-friendly actions, earn tokenized carbon credits (ERC-20), unlock NFT badges (ERC-721), and participate in a vibrant ecosystem with marketplace, staking, and governance features.
+# 🌍 EcoCred
+### Decentralized Carbon Credit Rewards Platform
+
+A comprehensive blockchain-powered platform that brings **transparency, accountability, and gamification** to sustainability efforts.
 
 ![Version](https://img.shields.io/badge/version-2.0.0-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Blockchain](https://img.shields.io/badge/blockchain-Ethereum-purple)
+
+</div>
 
 ---
 

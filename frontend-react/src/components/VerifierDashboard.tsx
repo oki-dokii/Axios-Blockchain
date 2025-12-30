@@ -102,7 +102,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                 // Backend now calculates estimated credits for pending actions
                 const estimatedCredits = a.estimatedCredits !== undefined && a.estimatedCredits > 0
                     ? a.estimatedCredits
-                    : (a.status === 'PENDING' && a.quantity) 
+                    : (a.status === 'PENDING' && a.quantity)
                         ? (a.quantity * (actionTypesMap.get(a.actionType) || 0))
                         : (a.creditsAwarded || 0);
 
@@ -233,12 +233,12 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
 
         setVerifying(selectedAction.id);
         try {
-            console.log('Verifying action:', { 
-                actionId: selectedAction.id, 
-                approved, 
-                comments 
+            console.log('Verifying action:', {
+                actionId: selectedAction.id,
+                approved,
+                comments
             });
-            
+
             // First, verify via backend API
             const response = await api.verifyAction(selectedAction.id, approved, comments);
             console.log('Backend verification response:', response);
@@ -246,36 +246,36 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
             // Execute blockchain smart contract verification
             if (approved) {
                 try {
-                    const actualCredits = selectedAction.creditsEarned || 
-                                         selectedAction.creditsAwarded || 
-                                         selectedAction.estimatedCredits || 0;
-                    
+                    const actualCredits = selectedAction.creditsEarned ||
+                        selectedAction.creditsAwarded ||
+                        selectedAction.estimatedCredits || 0;
+
                     if (actualCredits <= 0) {
                         console.warn('[VerifierDashboard] No credits to award, skipping blockchain verification');
                     } else {
                         let blockchainActionId = selectedAction.blockchainActionId;
-                        
+
                         // Step 1: Ensure action is logged on blockchain
                         // If action doesn't exist on blockchain yet, log it first
                         if (!blockchainActionId) {
                             console.log('[VerifierDashboard] Action not on blockchain yet. Logging action first...');
-                            
+
                             // Get full action details including company wallet address
                             const actionDetails = await api.get(`/actions/${selectedAction.id}`) as any;
                             const companyAddress = actionDetails?.company?.walletAddress;
-                            
+
                             if (!companyAddress) {
                                 throw new Error('Company wallet address not found. Cannot log action on blockchain.');
                             }
-                            
+
                             // Determine action title and category
-                            const actionTitle = selectedAction.title || 
-                                               selectedAction.description?.substring(0, 50) || 
-                                               'Eco Action';
+                            const actionTitle = selectedAction.title ||
+                                selectedAction.description?.substring(0, 50) ||
+                                'Eco Action';
                             const actionDescription = selectedAction.description || '';
                             const actionCategory = (actionDetails?.actionType as string) || 'general';
                             const actionLocation = (actionDetails?.location as string) || 'N/A';
-                            
+
                             console.log('[VerifierDashboard] Logging action on blockchain:', {
                                 title: actionTitle,
                                 description: actionDescription.substring(0, 100),
@@ -283,7 +283,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                 category: actionCategory,
                                 company: companyAddress
                             });
-                            
+
                             // IMPORTANT: Log the action on blockchain
                             // Note: The contract sets action.company = msg.sender, so this will create
                             // an action attributed to the verifier. However, this is a workaround for
@@ -298,32 +298,32 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                 actionLocation,
                                 actionCategory
                             );
-                            
+
                             if (!logTx) {
                                 throw new Error('Failed to log action on blockchain');
                             }
-                            
+
                             // Wait for transaction to be mined
                             console.log('[VerifierDashboard] Waiting for logEcoAction transaction confirmation...');
                             addNotification('info', 'Logging action on blockchain...');
-                            
+
                             const logReceipt = await logTx.wait();
                             if (!logReceipt) {
                                 throw new Error('Transaction receipt not available');
                             }
-                            
+
                             console.log('[VerifierDashboard] Log transaction confirmed:', {
                                 hash: logReceipt.hash,
                                 blockNumber: logReceipt.blockNumber
                             });
-                            
+
                             // Extract blockchain action ID from transaction receipt events
                             const ecoLedgerInterface = new ethers.Interface([
                                 "event EcoActionLogged(uint256 indexed actionId, address indexed company, string title, string category)"
                             ]);
-                            
+
                             let extractedActionId: number | null = null;
-                            
+
                             // Parse logs to find EcoActionLogged event
                             if (logReceipt.logs && logReceipt.logs.length > 0) {
                                 for (const log of logReceipt.logs) {
@@ -332,7 +332,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                             topics: log.topics,
                                             data: log.data
                                         });
-                                        
+
                                         if (parsedLog && parsedLog.name === 'EcoActionLogged') {
                                             extractedActionId = Number(parsedLog.args.actionId);
                                             console.log('[VerifierDashboard] ✅ Extracted blockchain action ID:', extractedActionId);
@@ -344,14 +344,14 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                     }
                                 }
                             }
-                            
+
                             if (!extractedActionId) {
                                 console.error('[VerifierDashboard] Failed to extract action ID from logs:', logReceipt.logs);
                                 throw new Error('Failed to extract blockchain action ID from transaction. Check transaction logs manually.');
                             }
-                            
+
                             blockchainActionId = extractedActionId.toString();
-                            
+
                             // Update database with blockchain action ID
                             console.log('[VerifierDashboard] Updating database with blockchain action ID...');
                             await api.patch(`/actions/${selectedAction.id}/blockchain`, {
@@ -359,59 +359,59 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                 txHash: logReceipt.hash,
                                 blockNumber: logReceipt.blockNumber
                             });
-                            
+
                             console.log('[VerifierDashboard] ✅ Database updated with blockchain action ID:', extractedActionId);
                             addNotification('success', `Action logged on blockchain (ID: ${extractedActionId})`);
                         } else {
                             console.log('[VerifierDashboard] Action already on blockchain with ID:', blockchainActionId);
                         }
-                        
+
                         // Step 2: Verify the action on blockchain
                         if (!blockchainActionId) {
                             throw new Error('Blockchain action ID is required for verification');
                         }
-                        
+
                         console.log('[VerifierDashboard] Verifying action on blockchain...', {
                             blockchainActionId,
                             approved,
                             actualCredits
                         });
-                        
+
                         addNotification('info', `Verifying action on blockchain (Action ID: ${blockchainActionId})...`);
-                        
+
                         const verifyTx = await verifyAction(
-                            parseInt(blockchainActionId.toString()), 
-                            approved, 
+                            parseInt(blockchainActionId.toString()),
+                            approved,
                             actualCredits
                         );
-                        
+
                         if (!verifyTx) {
                             throw new Error('Failed to create verification transaction');
                         }
-                        
+
                         console.log('[VerifierDashboard] Verification transaction sent:', verifyTx.hash);
                         setPendingTransaction(verifyTx);
-                        
+
                         // Wait for verification transaction to be mined
                         console.log('[VerifierDashboard] Waiting for verification transaction confirmation...');
                         addNotification('info', 'Verification transaction submitted. Waiting for confirmation...');
-                        
+
                         const verifyReceipt = await verifyTx.wait();
                         if (!verifyReceipt) {
                             throw new Error('Verification transaction receipt not available');
                         }
-                        
+
                         console.log('[VerifierDashboard] ✅ Verification transaction confirmed:', {
                             hash: verifyReceipt.hash,
                             blockNumber: verifyReceipt.blockNumber
                         });
-                        
+
                         // Update database with verification transaction details
                         await api.patch(`/actions/${selectedAction.id}/blockchain`, {
                             txHash: verifyReceipt.hash,
                             blockNumber: verifyReceipt.blockNumber
                         });
-                        
+
                         addNotification('success', '✅ Action verified on blockchain! Credits have been minted.');
                         console.log('[VerifierDashboard] ✅ Blockchain verification complete!');
                     }
@@ -507,11 +507,11 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                         animate={{ rotate: [0, 10, -10, 0] }}
                         transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
                     >
-                        <CheckCircle2 className="h-8 w-8 text-green-600" />
+                        <CheckCircle2 className="h-8 w-8 text-emerald-400" />
                     </motion.div>
-                    <h1 className="text-4xl font-bold gradient-text">Verifier Dashboard</h1>
+                    <h1 className="text-4xl font-bold text-white tracking-tight">Verifier Dashboard</h1>
                 </div>
-                <p className="text-secondary-600 text-lg">Review and verify eco actions submitted by companies</p>
+                <p className="text-gray-400 text-lg">Review and verify eco actions submitted by companies</p>
             </motion.div>
 
             {loading ? (
@@ -520,7 +520,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                 >
-                    <Activity size={40} className="animate-spin text-primary-600" />
+                    <Activity size={40} className="animate-spin text-emerald-500" />
                 </motion.div>
             ) : (
                 <>
@@ -530,7 +530,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                             return (
                                 <motion.div
                                     key={stat.label}
-                                    className="stat-card group relative overflow-hidden bg-white shadow-sm border border-secondary-200 rounded-xl"
+                                    className="group relative overflow-hidden bg-white/5 backdrop-blur-xl border border-white/10 shadow-xl rounded-2xl"
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: index * 0.1, duration: 0.5 }}
@@ -547,9 +547,9 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                             </div>
                                         </motion.div>
                                         <div className="ml-4 flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-secondary-600 mb-1">{stat.label}</p>
-                                            <p className="text-3xl font-bold text-secondary-900">{stat.value}</p>
-                                            <p className="text-xs text-secondary-500 mt-1">{stat.description}</p>
+                                            <p className="text-sm font-medium text-gray-400 mb-1">{stat.label}</p>
+                                            <p className="text-3xl font-bold text-white">{stat.value}</p>
+                                            <p className="text-xs text-gray-500 mt-1">{stat.description}</p>
                                         </div>
                                     </div>
                                 </motion.div>
@@ -564,42 +564,44 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: 0.4, duration: 0.5 }}
                         >
-                            <div className="card p-6 bg-white shadow-sm border border-secondary-200 rounded-xl">
+                            <div className="card p-6 bg-white/5 backdrop-blur-xl border border-white/10 shadow-xl rounded-2xl">
                                 <div className="flex items-center justify-between mb-6">
-                                    <h3 className="text-lg font-semibold text-secondary-900">Pending Verifications</h3>
+                                    <h3 className="text-xl font-bold text-white">Pending Verifications</h3>
                                     <Link
                                         to="/actions"
-                                        className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                                        className="text-sm text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
                                     >
                                         View All →
                                     </Link>
                                 </div>
                                 {pendingActions.length === 0 ? (
                                     <div className="text-center py-12">
-                                        <FileCheck className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
-                                        <p className="text-secondary-600">No pending actions to verify</p>
+                                        <FileCheck className="h-16 w-16 text-gray-600 mx-auto mb-4" />
+                                        <p className="text-gray-400 text-lg">No pending actions to verify</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
                                         {pendingActions.map((action, index) => (
                                             <motion.div
                                                 key={action.id}
-                                                className="border border-secondary-200 rounded-lg p-4 hover:border-primary-300 transition-colors"
+                                                className="border border-white/5 bg-white/5 rounded-xl p-4 hover:border-emerald-500/50 hover:bg-white/10 transition-all duration-300"
                                                 initial={{ opacity: 0, x: -20 }}
                                                 animate={{ opacity: 1, x: 0 }}
                                                 transition={{ delay: 0.5 + index * 0.1 }}
                                             >
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1">
-                                                        <h4 className="font-semibold text-secondary-900 mb-1">
+                                                        <h4 className="text-lg font-semibold text-white mb-1">
                                                             {action.title || action.description?.substring(0, 50)}
                                                         </h4>
-                                                        <p className="text-sm text-secondary-600 mb-2">
+                                                        <p className="text-sm text-emerald-400 mb-2">
                                                             {action.company?.name || 'Unknown Company'}
                                                         </p>
-                                                        <div className="flex items-center gap-4 text-xs text-secondary-500">
-                                                            <span>Estimated: {action.estimatedCredits || 0} credits</span>
-                                                            <span>•</span>
+                                                        <div className="flex items-center gap-4 text-xs text-gray-400">
+                                                            <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-md">
+                                                                Estimated: {action.estimatedCredits || 0} credits
+                                                            </span>
+                                                            <span className="text-gray-600">•</span>
                                                             <span>{new Date(action.createdAt).toLocaleDateString()}</span>
                                                         </div>
                                                     </div>
@@ -607,7 +609,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                                         <button
                                                             onClick={() => openVerificationModal(action)}
                                                             disabled={verifying === action.id}
-                                                            className="btn-primary text-sm px-4 py-2 disabled:opacity-50"
+                                                            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-emerald-500/20"
                                                         >
                                                             {verifying === action.id ? 'Verifying...' : 'Review'}
                                                         </button>
@@ -626,46 +628,54 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: 0.5, duration: 0.5 }}
                         >
-                            <div className="card p-6 bg-white shadow-sm border border-secondary-200 rounded-xl">
-                                <h3 className="text-lg font-semibold text-secondary-900 mb-6">Verification Guidelines</h3>
-                                <div className="space-y-4">
+                            <div className="card p-6 bg-white/5 backdrop-blur-xl border border-white/10 shadow-xl rounded-2xl h-full">
+                                <h3 className="text-xl font-bold text-white mb-6">Verification Guidelines</h3>
+                                <div className="space-y-6">
                                     {guidelines.length > 0 ? (
                                         guidelines.map((guideline, index) => {
                                             const IconComponent = getIconComponent(guideline.icon);
-                                            const colors = ['text-green-600', 'text-yellow-600', 'text-blue-600', 'text-purple-600', 'text-cyan-600'];
+                                            const colors = ['text-emerald-400', 'text-amber-400', 'text-blue-400', 'text-purple-400', 'text-cyan-400'];
                                             return (
-                                                <div key={guideline.id} className="flex items-start gap-3">
-                                                    <IconComponent className={`h-5 w-5 ${colors[index % colors.length]} mt-0.5 flex-shrink-0`} />
+                                                <div key={guideline.id} className="flex items-start gap-4">
+                                                    <div className={`p-2 rounded-lg bg-white/5 border border-white/5`}>
+                                                        <IconComponent className={`h-5 w-5 ${colors[index % colors.length]}`} />
+                                                    </div>
                                                     <div>
-                                                        <p className="font-medium text-secondary-900 text-sm">{guideline.title}</p>
-                                                        <p className="text-xs text-secondary-600">{guideline.description}</p>
+                                                        <p className="font-semibold text-gray-200 text-sm">{guideline.title}</p>
+                                                        <p className="text-xs text-gray-400 mt-1 leading-relaxed">{guideline.description}</p>
                                                     </div>
                                                 </div>
                                             );
                                         })
                                     ) : (
                                         <>
-                                    <div className="flex items-start gap-3">
-                                        <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
-                                        <div>
-                                            <p className="font-medium text-secondary-900 text-sm">Verify Evidence</p>
-                                            <p className="text-xs text-secondary-600">Check all supporting documents</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-start gap-3">
-                                        <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                                        <div>
-                                            <p className="font-medium text-secondary-900 text-sm">Assess Impact</p>
-                                            <p className="text-xs text-secondary-600">Evaluate environmental benefit</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-start gap-3">
-                                        <FileCheck className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                                        <div>
-                                            <p className="font-medium text-secondary-900 text-sm">Multi-Verification</p>
-                                            <p className="text-xs text-secondary-600">Requires consensus</p>
-                                        </div>
-                                    </div>
+                                            <div className="flex items-start gap-4">
+                                                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                                    <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-gray-200 text-sm">Verify Evidence</p>
+                                                    <p className="text-xs text-gray-400 mt-1 leading-relaxed">Check all supporting documents provided by the company</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-start gap-4">
+                                                <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                                                    <AlertCircle className="h-5 w-5 text-amber-400" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-gray-200 text-sm">Assess Impact</p>
+                                                    <p className="text-xs text-gray-400 mt-1 leading-relaxed">Evaluate the real-world environmental benefit</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-start gap-4">
+                                                <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                                    <FileCheck className="h-5 w-5 text-blue-400" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-gray-200 text-sm">Multi-Verification</p>
+                                                    <p className="text-xs text-gray-400 mt-1 leading-relaxed">Large actions may require consensus from multiple verifiers</p>
+                                                </div>
+                                            </div>
                                         </>
                                     )}
                                 </div>
@@ -688,8 +698,8 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.7, duration: 0.5 }}
                     >
-                        <div className="card p-6 bg-white shadow-sm border border-secondary-200 rounded-xl">
-                            <h3 className="text-lg font-semibold text-secondary-900 mb-6">Quick Actions</h3>
+                        <div className="card p-6 bg-white/5 backdrop-blur-xl border border-white/10 shadow-xl rounded-2xl">
+                            <h3 className="text-xl font-bold text-white mb-6">Quick Actions</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {quickActions.length > 0 ? (
                                     quickActions.map((action) => {
@@ -700,7 +710,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                                     <button
                                                         onClick={loadDashboardData}
                                                         disabled={loading}
-                                                        className={`${action.isPrimary ? 'btn-primary' : 'btn-secondary'} flex items-center justify-center w-full disabled:opacity-50`}
+                                                        className={`${action.isPrimary ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-white/10 hover:bg-white/20 text-white'} flex items-center justify-center w-full py-4 rounded-xl border border-white/5 transition-all shadow-lg font-medium disabled:opacity-50`}
                                                     >
                                                         <IconComponent className="h-5 w-5 mr-2" />
                                                         {loading ? 'Refreshing...' : action.title}
@@ -710,7 +720,7 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                         }
                                         return (
                                             <motion.div key={action.id} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                                <Link to={action.route} className={`${action.isPrimary ? 'btn-primary' : 'btn-secondary'} flex items-center justify-center w-full`}>
+                                                <Link to={action.route} className={`${action.isPrimary ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-white/10 hover:bg-white/20 text-white'} flex items-center justify-center w-full py-4 rounded-xl border border-white/5 transition-all shadow-lg font-medium`}>
                                                     <IconComponent className="h-5 w-5 mr-2" />
                                                     {action.title}
                                                 </Link>
@@ -719,28 +729,28 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
                                     })
                                 ) : (
                                     <>
-                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                    <Link to="/actions" className="btn-primary flex items-center justify-center w-full">
-                                        <FileCheck className="h-5 w-5 mr-2" />
-                                        Review Actions
-                                    </Link>
-                                </motion.div>
-                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                    <button
-                                        onClick={loadDashboardData}
-                                        disabled={loading}
-                                        className="btn-secondary flex items-center justify-center w-full disabled:opacity-50"
-                                    >
-                                        <Activity className="h-5 w-5 mr-2" />
-                                        {loading ? 'Refreshing...' : 'Refresh Data'}
-                                    </button>
-                                </motion.div>
-                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                    <Link to="/analytics" className="btn-secondary flex items-center justify-center w-full">
-                                        <TrendingUp className="h-5 w-5 mr-2" />
-                                        Analytics
-                                    </Link>
-                                </motion.div>
+                                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                            <Link to="/actions" className="bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center w-full py-4 rounded-xl shadow-lg shadow-emerald-500/20 font-medium transition-colors">
+                                                <FileCheck className="h-5 w-5 mr-2" />
+                                                Review Actions
+                                            </Link>
+                                        </motion.div>
+                                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                            <button
+                                                onClick={loadDashboardData}
+                                                disabled={loading}
+                                                className="bg-white/10 hover:bg-white/20 text-white border border-white/10 flex items-center justify-center w-full py-4 rounded-xl font-medium transition-all disabled:opacity-50"
+                                            >
+                                                <Activity className="h-5 w-5 mr-2" />
+                                                {loading ? 'Refreshing...' : 'Refresh Data'}
+                                            </button>
+                                        </motion.div>
+                                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                            <Link to="/analytics" className="bg-white/10 hover:bg-white/20 text-white border border-white/10 flex items-center justify-center w-full py-4 rounded-xl font-medium transition-all">
+                                                <TrendingUp className="h-5 w-5 mr-2" />
+                                                Analytics
+                                            </Link>
+                                        </motion.div>
                                     </>
                                 )}
                             </div>
@@ -760,5 +770,6 @@ export function VerifierDashboard({ user }: VerifierDashboardProps) {
             />
         </>
     );
+
 }
 

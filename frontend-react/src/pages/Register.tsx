@@ -107,7 +107,7 @@ export default function Register() {
         } catch (err) {
             console.error('Registration error:', err);
             let errorMessage = 'Registration failed';
-            
+
             if (err instanceof Error) {
                 errorMessage = err.message;
             } else if (err.response?.data?.error?.message) {
@@ -115,7 +115,7 @@ export default function Register() {
             } else if (err.originalError?.error?.message) {
                 errorMessage = err.originalError.error.message;
             }
-            
+
             setError(errorMessage);
         } finally {
             setLoading(false);
@@ -141,7 +141,7 @@ export default function Register() {
                             </div>
                         </div>
                         <h1 className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-2">
-                            Join EcoCred
+                            Join EcoLedger
                         </h1>
                         <p className="text-gray-600">Create your account and start making an impact</p>
                     </div>
@@ -249,8 +249,8 @@ export default function Register() {
                                         <label
                                             key={option.value}
                                             className={`flex items-start gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all duration-300 ${formData.role === option.value
-                                                    ? 'border-green-500 bg-green-50/50 shadow-md'
-                                                    : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                                                ? 'border-green-500 bg-green-50/50 shadow-md'
+                                                : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
                                                 }`}
                                         >
                                             <input
@@ -263,7 +263,7 @@ export default function Register() {
                                             />
                                             <div className="flex-1">
                                                 <div className="font-semibold text-gray-900">{option.label}</div>
-                                                                <div className="text-sm text-gray-600">{option.description}</div>
+                                                <div className="text-sm text-gray-600">{option.description}</div>
                                             </div>
                                         </label>
                                     ))}

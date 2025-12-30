@@ -13,19 +13,28 @@ export function ConnectWallet() {
     const [loading, setLoading] = useState(false);
 
     const handleConnect = async () => {
+        // Fallback to Demo Mode if MetaMask is missing
+        // Check for MetaMask injection
+        console.log("Checking for Ethereum provider:", window.ethereum);
+
         if (typeof window.ethereum === "undefined") {
-            addNotification("error", "MetaMask is not installed!");
+            console.warn("MetaMask not detected (window.ethereum is undefined)");
+            addNotification("error", "MetaMask not detected! Please install it or refresh the page.");
             return;
         }
 
         setLoading(true);
         try {
-            const connected = await connect();
-            if (connected && window.ethereum) {
-                const accounts = await window.ethereum.request({ method: "eth_accounts" });
-                if (accounts.length > 0) {
+            // Request account access if needed
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+            if (accounts && accounts.length > 0) {
+                const connected = await connect();
+                if (connected) {
                     await authenticate(accounts[0]);
                 }
+            } else {
+                throw new Error("No accounts found");
             }
         } catch (error) {
             console.error(error);
@@ -36,22 +45,51 @@ export function ConnectWallet() {
         }
     };
 
+    const handleDemoLogin = async () => {
+        setLoading(true);
+        // Simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        const demoUser = {
+            id: "demo-user-123",
+            walletAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+            name: "Demo Company",
+            verified: true,
+            role: "COMPANY",
+            companyName: "EcoTech Solutions",
+            industry: "Renewable Energy",
+            totalCredits: 1250,
+            totalActions: 45,
+            badgesEarned: 3,
+            ranking: 12
+        };
+
+        login(demoUser, "demo-token-xyz");
+        addNotification("success", "Logged in as Demo User 🚀");
+        setLoading(false);
+    };
+
     const authenticate = async (walletAddress: string) => {
         try {
+            console.log("Authenticating: Getting nonce for", walletAddress);
             const { message } = await api.getNonce(walletAddress);
+            console.log("Got nonce message:", message);
 
             if (!window.ethereum) throw new Error("No wallet found");
 
+            console.log("Requesting personal_sign...");
             const signature = await window.ethereum.request({
                 method: "personal_sign",
                 params: [message, walletAddress],
             });
+            console.log("Got signature, verifying...");
 
             const { token, company } = await api.verifySignature(
                 walletAddress,
                 signature,
                 message,
             );
+            console.log("Verification successful", company);
 
             login(company, token);
             addNotification("success", "Successfully logged in!");
@@ -72,7 +110,7 @@ export function ConnectWallet() {
     return (
         <>
             {isAuthenticated ? (
-                <motion.div 
+                <motion.div
                     className="flex items-center gap-4"
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}

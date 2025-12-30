@@ -233,14 +233,14 @@ class ApiService {
             return await response.json();
         } catch (error) {
             console.error('API Error:', error);
-            
+
             // Handle network errors (Failed to fetch)
             if (error instanceof TypeError && error.message === 'Failed to fetch') {
                 const networkError: ApiError = new Error('Unable to connect to server. Please make sure the backend is running on http://localhost:3001');
                 networkError.isNetworkError = true;
                 throw networkError;
             }
-            
+
             // Re-throw other errors
             throw error;
         }
@@ -463,7 +463,11 @@ class ApiService {
     // Badges endpoints
     async getBadgeDefinitions(activeOnly: boolean = true) {
         const params = activeOnly ? '?active=true' : '';
-        return this.request<BadgeDefinition[]>(`/badges/definitions${params}`);
+        const response = await this.request<{ badges: BadgeDefinition[] } | BadgeDefinition[]>(`/badges/definitions${params}`);
+        if (Array.isArray(response)) {
+            return response;
+        }
+        return (response as { badges: BadgeDefinition[] })?.badges || [];
     }
 
     async getBadgeDefinition(id: string) {

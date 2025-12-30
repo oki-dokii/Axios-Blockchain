@@ -2,128 +2,85 @@ import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2, Trophy, Sparkles, Crown, Medal } from 'lucide-react';
 import { useUser } from '../contexts/UserContext';
-import { useBlockchain } from '../hooks/useBlockchain';
 import { useNotifications } from '../contexts/NotificationContext';
 import { api } from '../lib/services/api';
-import { ethers } from 'ethers';
 
 interface LeaderboardEntry {
     rank: number;
-    company: string; // wallet address
-    totalCredits: bigint;
-    reputationScore: bigint;
-    companyName?: string;
-    totalActions?: number;
-    verified?: boolean;
+    companyId: string;
+    companyName: string;
+    walletAddress: string;
+    totalCredits: number;
+    totalActions: number;
+    totalBadges: number;
+    verified: boolean;
+    change?: string;
 }
 
 export function Leaderboard() {
     const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
     const [loading, setLoading] = useState(true);
-    const [period, setPeriod] = useState<'weekly' | 'monthly' | 'all-time'>('all-time');
+    const [period, setPeriod] = useState<'WEEKLY' | 'MONTHLY' | 'ALL_TIME'>('ALL_TIME');
     const { user } = useUser();
-    const { getTopCompanies, getCompanyRank } = useBlockchain();
     const { addNotification } = useNotifications();
 
     const loadLeaderboard = useCallback(async () => {
         setLoading(true);
         try {
-            // Try blockchain contract first
-            try {
-                const topCompanies = await getTopCompanies(100);
-                if (topCompanies && topCompanies.length > 0) {
-                    // Map blockchain data to our format
-                    const mappedEntries: LeaderboardEntry[] = topCompanies.map((entry: any, index: number) => ({
-                        rank: Number(entry.rank) || index + 1,
-                        company: entry.company,
-                        totalCredits: entry.totalCredits,
-                        reputationScore: entry.reputationScore,
-                        companyName: undefined, // Will fetch from backend if needed
-                        totalActions: 0,
-                        verified: false
-                    }));
+            const response = await api.getLeaderboard(period);
+            // API returns { period, leaderboard: [...], total }
+            // Or if api.ts unwraps it differently, we adjust. 
+            // Based on earlier curl, it returns { leaderboard: [...] }
 
-                    // Try to enrich with backend data for company names
-                    try {
-                        const backendResponse = await api.getLeaderboard('ALL_TIME');
-                        const backendMap = new Map(
-                            (backendResponse || []).map((e: any) => [e.company?.walletAddress, e])
-                        );
+            const data = (response as any).leaderboard || response || [];
 
-                        const enrichedEntries = mappedEntries.map(entry => {
-                            const backendData = backendMap.get(entry.company);
-                            return {
-                                ...entry,
-                                companyName: backendData?.company?.name || `${entry.company.slice(0, 6)}...${entry.company.slice(-4)}`,
-                                totalActions: backendData?.totalActions || 0,
-                                verified: backendData?.company?.verified || false
-                            };
-                        });
-
-                        setEntries(enrichedEntries);
-                        setLoading(false);
-                        return;
-                    } catch (backendError) {
-                        console.warn('Failed to enrich with backend data, using blockchain data only:', backendError);
-                        // Use blockchain data without backend enrichment
-                    }
-                    
-                    // If backend enrichment failed, use blockchain data as-is
-                    setEntries(mappedEntries);
-                    setLoading(false);
-                    return;
-                }
-            } catch (blockchainError) {
-                console.warn('Failed to load from blockchain, falling back to backend:', blockchainError);
+            if (Array.isArray(data)) {
+                const mappedEntries = data.map((entry: any, index: number) => ({
+                    rank: entry.rank || index + 1,
+                    companyId: entry.id,
+                    companyName: entry.name || 'Unknown Company',
+                    walletAddress: entry.walletAddress,
+                    totalCredits: entry.credits || 0,
+                    totalActions: entry.actions || 0,
+                    totalBadges: entry.badges || 0,
+                    verified: entry.verified || false,
+                    change: entry.change
+                }));
+                setEntries(mappedEntries);
+            } else {
+                setEntries([]);
             }
 
-            // Fallback to backend API
-            const periodMap: Record<string, string> = {
-                'weekly': 'WEEKLY',
-                'monthly': 'MONTHLY',
-                'all-time': 'ALL_TIME'
-            };
-            const response = await api.getLeaderboard(periodMap[period]);
-            const mappedEntries: LeaderboardEntry[] = (response || []).map((entry: any, index: number) => ({
-                rank: entry.rank || index + 1,
-                company: entry.company?.walletAddress || entry.companyId || '',
-                totalCredits: BigInt(entry.totalCredits || 0),
-                reputationScore: BigInt(0),
-                companyName: entry.company?.name || 'Unknown',
-                totalActions: entry.totalActions || 0,
-                verified: entry.company?.verified || false
-            }));
-            setEntries(mappedEntries);
         } catch (error) {
-            console.error('Failed to load leaderboard:', error);
-            addNotification('error', 'Failed to load leaderboard');
+            console.error('Antigravity: Failed to load leaderboard:', error);
+            // Don't spam notifications on load failure, just show empty state or logs
         } finally {
             setLoading(false);
         }
-    }, [period, getTopCompanies, addNotification]);
+    }, [period]);
 
     useEffect(() => {
         loadLeaderboard();
     }, [loadLeaderboard]);
 
     const getRankColor = (rank: number) => {
-        if (rank === 1) return 'text-yellow-600';
-        if (rank === 2) return 'text-gray-400';
-        if (rank === 3) return 'text-orange-600';
-        return 'text-secondary-600';
+        if (rank === 1) return 'text-yellow-400';
+        if (rank === 2) return 'text-slate-300';
+        if (rank === 3) return 'text-orange-400';
+        return 'text-white';
     };
 
     const getRankBg = (rank: number) => {
-        if (rank === 1) return 'bg-yellow-100';
-        if (rank === 2) return 'bg-gray-100';
-        if (rank === 3) return 'bg-orange-100';
-        return 'bg-secondary-50';
+        if (rank === 1) return 'bg-yellow-500/20 border-yellow-500/50';
+        if (rank === 2) return 'bg-slate-500/20 border-slate-500/50';
+        if (rank === 3) return 'bg-orange-500/20 border-orange-500/50';
+        return 'bg-white/5 border-white/10';
     };
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <motion.div 
-                className="flex justify-between items-center mb-8"
+            <motion.div
+                className="flex justify-between items-center mb-12"
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
@@ -134,102 +91,103 @@ export function Leaderboard() {
                             animate={{ rotate: [0, 10, -10, 0] }}
                             transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
                         >
-                            <Sparkles className="h-8 w-8 text-primary-600" />
+                            <Sparkles className="h-8 w-8 text-primary-400" />
                         </motion.div>
-                        <h1 className="text-4xl font-bold gradient-text">Leaderboard</h1>
+                        <h1 className="text-4xl font-bold text-white">Leaderboard</h1>
                     </div>
-                    <p className="mt-2 text-secondary-600 text-lg">
+                    <p className="mt-2 text-slate-400 text-lg">
                         Top performing companies in carbon credit generation.
                     </p>
                 </div>
 
-                <motion.select
-                    value={period}
-                    onChange={(e) => setPeriod(e.target.value as 'weekly' | 'monthly' | 'all-time')}
-                    className="px-4 py-2 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white shadow-sm"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                >
-                    <option value="weekly">This Week</option>
-                    <option value="monthly">This Month</option>
-                    <option value="all-time">All Time</option>
-                </motion.select>
+                <div className="bg-white/5 p-1 rounded-xl border border-white/10 flex gap-1">
+                    {(['WEEKLY', 'MONTHLY', 'ALL_TIME'] as const).map((p) => (
+                        <button
+                            key={p}
+                            onClick={() => setPeriod(p)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${period === p
+                                    ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/20'
+                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                }`}
+                        >
+                            {p.replace('_', ' ')}
+                        </button>
+                    ))}
+                </div>
             </motion.div>
 
             {/* Top 3 Podium */}
             {!loading && entries.length >= 3 && (
-                <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 items-end">
                     {/* 2nd Place */}
-                    <motion.div 
-                        className="order-1"
+                    <motion.div
+                        className="order-2 md:order-1"
                         initial={{ opacity: 0, x: -50, y: 50 }}
                         animate={{ opacity: 1, x: 0, y: 0 }}
-                        transition={{ delay: 0.2, duration: 0.6, type: "spring" }}
+                        transition={{ delay: 0.2, duration: 0.6 }}
                     >
-                        <div className="card card-hover p-6 text-center relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-gray-400 to-gray-500"></div>
-                            <motion.div 
-                                className={`w-16 h-16 mx-auto mb-3 rounded-full ${getRankBg(2)} flex items-center justify-center shadow-lg`}
+                        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 text-center relative overflow-hidden group hover:bg-white/10 transition-colors">
+                            <div className="absolute inset-0 bg-gradient-to-b from-slate-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <motion.div
+                                className={`w-20 h-20 mx-auto mb-4 rounded-full ${getRankBg(2)} flex items-center justify-center border-2 backdrop-blur-sm`}
                                 animate={{ y: [0, -5, 0] }}
                                 transition={{ duration: 2, repeat: Infinity }}
                             >
-                                <Medal className={getRankColor(2)} size={32} />
+                                <Medal className="text-slate-300 w-10 h-10" />
                             </motion.div>
-                            <div className="text-2xl font-bold text-secondary-400 mb-1">2nd</div>
-                            <h3 className="font-semibold text-secondary-900 mb-2">{entries[1].companyName || `${entries[1].company.slice(0, 6)}...${entries[1].company.slice(-4)}`}</h3>
-                            <p className="text-lg font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">{ethers.formatEther(entries[1].totalCredits)} Credits</p>
+                            <div className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">2nd Place</div>
+                            <h3 className="text-xl font-bold text-white mb-2 truncate">{entries[1].companyName}</h3>
+                            <p className="text-2xl font-bold text-primary-400">{entries[1].totalCredits.toLocaleString()}</p>
+                            <p className="text-sm text-slate-500">Credits Earned</p>
                         </div>
                     </motion.div>
 
                     {/* 1st Place */}
-                    <motion.div 
-                        className="order-2"
+                    <motion.div
+                        className="order-1 md:order-2 z-10"
                         initial={{ opacity: 0, y: -50, scale: 0.8 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        transition={{ delay: 0.1, duration: 0.6, type: "spring" }}
+                        transition={{ delay: 0.1, duration: 0.6 }}
                     >
-                        <div className="card p-6 text-center relative overflow-hidden border-2 border-yellow-400 shadow-xl bg-gradient-to-br from-yellow-50 to-amber-50">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400"></div>
-                            <motion.div 
-                                className={`w-20 h-20 mx-auto mb-3 rounded-full ${getRankBg(1)} flex items-center justify-center shadow-xl relative`}
-                                animate={{ 
+                        <div className="bg-gradient-to-b from-yellow-500/20 to-orange-500/5 backdrop-blur-xl border border-yellow-500/30 rounded-2xl p-8 text-center relative overflow-hidden shadow-2xl shadow-yellow-500/10">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-orange-500 to-yellow-400 animate-pulse"></div>
+                            <motion.div
+                                className={`w-24 h-24 mx-auto mb-6 rounded-full bg-yellow-500/20 border-2 border-yellow-400 flex items-center justify-center shadow-[0_0_30px_rgba(234,179,8,0.3)]`}
+                                animate={{
                                     y: [0, -10, 0],
                                     rotate: [0, 5, -5, 0]
                                 }}
-                                transition={{ duration: 2, repeat: Infinity }}
+                                transition={{ duration: 3, repeat: Infinity }}
                             >
-                                <Crown className={getRankColor(1)} size={40} />
-                                <motion.div
-                                    className="absolute inset-0 rounded-full bg-yellow-400 opacity-20"
-                                    animate={{ scale: [1, 1.2, 1] }}
-                                    transition={{ duration: 2, repeat: Infinity }}
-                                />
+                                <Crown className="text-yellow-400 w-12 h-12" />
                             </motion.div>
-                            <div className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-amber-600 bg-clip-text text-transparent mb-1">1st</div>
-                            <h3 className="font-semibold text-secondary-900 mb-2 text-lg">{entries[0].companyName || `${entries[0].company.slice(0, 6)}...${entries[0].company.slice(-4)}`}</h3>
-                            <p className="text-xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">{ethers.formatEther(entries[0].totalCredits)} Credits</p>
+                            <div className="text-sm font-bold text-yellow-400 uppercase tracking-wider mb-2">Champion</div>
+                            <h3 className="text-2xl font-bold text-white mb-2 truncate">{entries[0].companyName}</h3>
+                            <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-orange-400">{entries[0].totalCredits.toLocaleString()}</p>
+                            <p className="text-sm text-yellow-500/60 font-medium mt-1">Total Verified Credits</p>
                         </div>
                     </motion.div>
 
                     {/* 3rd Place */}
-                    <motion.div 
+                    <motion.div
                         className="order-3"
                         initial={{ opacity: 0, x: 50, y: 50 }}
                         animate={{ opacity: 1, x: 0, y: 0 }}
-                        transition={{ delay: 0.3, duration: 0.6, type: "spring" }}
+                        transition={{ delay: 0.3, duration: 0.6 }}
                     >
-                        <div className="card card-hover p-6 text-center relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 to-orange-500"></div>
-                            <motion.div 
-                                className={`w-16 h-16 mx-auto mb-3 rounded-full ${getRankBg(3)} flex items-center justify-center shadow-lg`}
+                        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 text-center relative overflow-hidden group hover:bg-white/10 transition-colors">
+                            <div className="absolute inset-0 bg-gradient-to-b from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <motion.div
+                                className={`w-20 h-20 mx-auto mb-4 rounded-full ${getRankBg(3)} flex items-center justify-center border-2 backdrop-blur-sm`}
                                 animate={{ y: [0, -5, 0] }}
                                 transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
                             >
-                                <Medal className={getRankColor(3)} size={32} />
+                                <Medal className="text-orange-400 w-10 h-10" />
                             </motion.div>
-                            <div className="text-2xl font-bold text-orange-600 mb-1">3rd</div>
-                            <h3 className="font-semibold text-secondary-900 mb-2">{entries[2].companyName || `${entries[2].company.slice(0, 6)}...${entries[2].company.slice(-4)}`}</h3>
-                            <p className="text-lg font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">{ethers.formatEther(entries[2].totalCredits)} Credits</p>
+                            <div className="text-sm font-bold text-orange-400/80 uppercase tracking-wider mb-2">3rd Place</div>
+                            <h3 className="text-xl font-bold text-white mb-2 truncate">{entries[2].companyName}</h3>
+                            <p className="text-2xl font-bold text-primary-400">{entries[2].totalCredits.toLocaleString()}</p>
+                            <p className="text-sm text-slate-500">Credits Earned</p>
                         </div>
                     </motion.div>
                 </div>
@@ -237,103 +195,90 @@ export function Leaderboard() {
 
             {/* Full Leaderboard Table */}
             {loading ? (
-                <motion.div 
-                    className="flex justify-center py-12"
+                <motion.div
+                    className="flex justify-center py-20"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                 >
-                    <Loader2 size={40} className="animate-spin text-primary-600" />
+                    <Loader2 size={40} className="animate-spin text-primary-500" />
                 </motion.div>
             ) : entries.length === 0 ? (
-                <motion.div 
-                    className="text-center py-12 card"
-                    initial={{ opacity: 0, scale: 0.9 }}
+                <motion.div
+                    className="text-center py-20 bg-white/5 rounded-3xl border border-white/10"
+                    initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.5 }}
                 >
-                    <motion.div
-                        animate={{ y: [0, -10, 0] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                    >
-                        <Trophy size={48} className="mx-auto text-secondary-400 mb-4" />
-                    </motion.div>
-                    <h3 className="text-lg font-medium text-secondary-900">No data available</h3>
-                    <p className="text-secondary-500 mt-1">Check back later for rankings</p>
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Trophy size={40} className="text-slate-500" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">Leaderboard Empty</h3>
+                    <p className="text-slate-400 max-w-sm mx-auto">
+                        No companies have earned verified credits for this period yet. Be the first!
+                    </p>
                 </motion.div>
             ) : (
-                <motion.div 
-                    className="card overflow-hidden"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4, duration: 0.5 }}
-                >
+                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-secondary-200">
-                            <thead className="bg-gradient-to-r from-secondary-50 to-secondary-100">
-                                <tr>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-secondary-600 uppercase tracking-wider">Rank</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-secondary-600 uppercase tracking-wider">Company</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-secondary-600 uppercase tracking-wider">Credits</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-secondary-600 uppercase tracking-wider">Actions</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-secondary-600 uppercase tracking-wider">Avg/Action</th>
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b border-white/10 bg-white/5">
+                                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Rank</th>
+                                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Company</th>
+                                    <th className="px-8 py-5 text-right text-xs font-bold text-slate-400 uppercase tracking-wider">Credits</th>
+                                    <th className="px-8 py-5 text-right text-xs font-bold text-slate-400 uppercase tracking-wider">Actions</th>
+                                    <th className="px-8 py-5 text-right text-xs font-bold text-slate-400 uppercase tracking-wider">Badges</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-secondary-200">
+                            <tbody className="divide-y divide-white/5">
                                 {entries.map((entry, index) => {
-                                    const isCurrentUser = user?.walletAddress?.toLowerCase() === entry.company.toLowerCase();
-                                    const creditsFormatted = ethers.formatEther(entry.totalCredits);
+                                    const isCurrentUser = user?.walletAddress?.toLowerCase() === entry.walletAddress?.toLowerCase();
                                     return (
                                         <motion.tr
-                                            key={entry.company}
-                                            className={`${isCurrentUser ? 'bg-gradient-to-r from-primary-50 to-primary-100/50' : 'hover:bg-secondary-50'} transition-colors`}
+                                            key={entry.companyId}
+                                            className={`group transition-colors ${isCurrentUser ? 'bg-primary-500/10 hover:bg-primary-500/20' : 'hover:bg-white/5'
+                                                }`}
                                             initial={{ opacity: 0, x: -20 }}
                                             animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: index * 0.05 + 0.5, duration: 0.3 }}
-                                            whileHover={{ scale: 1.01, x: 5 }}
+                                            transition={{ delay: index * 0.05 }}
                                         >
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className={`flex items-center gap-2 ${getRankColor(entry.rank)} font-bold text-lg`}>
-                                                    {entry.rank <= 3 && <Trophy size={20} />}
-                                                    #{entry.rank}
+                                            <td className="px-8 py-5 whitespace-nowrap">
+                                                <div className={`flex items-center gap-3 font-bold text-lg ${getRankColor(entry.rank)}`}>
+                                                    {entry.rank <= 3 ? <Trophy size={18} /> : <span className="w-5 text-center text-slate-500">#</span>}
+                                                    {entry.rank}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-medium text-secondary-900">
-                                                        {entry.companyName || `${entry.company.slice(0, 6)}...${entry.company.slice(-4)}`}
-                                                    </span>
-                                                    {entry.verified && (
-                                                        <motion.span 
-                                                            className="px-2 py-0.5 text-xs bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 rounded-full border border-green-200"
-                                                            initial={{ scale: 0 }}
-                                                            animate={{ scale: 1 }}
-                                                            transition={{ delay: index * 0.05 + 0.6 }}
-                                                        >
-                                                            ✓ Verified
-                                                        </motion.span>
-                                                    )}
-                                                    {isCurrentUser && (
-                                                        <motion.span 
-                                                            className="px-2 py-0.5 text-xs bg-gradient-to-r from-primary-100 to-primary-200 text-primary-800 rounded-full border border-primary-300"
-                                                            initial={{ scale: 0 }}
-                                                            animate={{ scale: 1 }}
-                                                            transition={{ delay: index * 0.05 + 0.6 }}
-                                                        >
-                                                            You
-                                                        </motion.span>
-                                                    )}
+                                            <td className="px-8 py-5 whitespace-nowrap">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${isCurrentUser ? 'bg-primary-500 text-white' : 'bg-white/10 text-slate-300 group-hover:bg-white/20'
+                                                        }`}>
+                                                        {entry.companyName.substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold text-white flex items-center gap-2">
+                                                            {entry.companyName}
+                                                            {isCurrentUser && (
+                                                                <span className="px-2 py-0.5 rounded-full bg-primary-500/20 border border-primary-500/50 text-xs text-primary-300">You</span>
+                                                            )}
+                                                            {entry.verified && (
+                                                                <span className="text-emerald-400" title="Verified Company">✓</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-xs text-slate-500 font-mono">
+                                                            {entry.walletAddress ? `${entry.walletAddress.substring(0, 6)}...${entry.walletAddress.substring(entry.walletAddress.length - 4)}` : 'No Wallet'}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                                                {parseFloat(creditsFormatted).toFixed(2)}
+                                            <td className="px-8 py-5 whitespace-nowrap text-right">
+                                                <div className="text-lg font-bold text-primary-400 tabular-nums">
+                                                    {entry.totalCredits.toLocaleString()}
+                                                </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-500">
-                                                {entry.totalActions || 0}
+                                            <td className="px-8 py-5 whitespace-nowrap text-right text-slate-300 tabular-nums">
+                                                {entry.totalActions.toLocaleString()}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-500">
-                                                {entry.totalActions && entry.totalActions > 0 
-                                                    ? (parseFloat(creditsFormatted) / entry.totalActions).toFixed(1) 
-                                                    : '0'}
+                                            <td className="px-8 py-5 whitespace-nowrap text-right text-slate-300 tabular-nums">
+                                                {entry.totalBadges.toLocaleString()}
                                             </td>
                                         </motion.tr>
                                     );
@@ -341,7 +286,7 @@ export function Leaderboard() {
                             </tbody>
                         </table>
                     </div>
-                </motion.div>
+                </div>
             )}
         </div>
     );

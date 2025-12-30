@@ -93,21 +93,24 @@ export function RecentActions() {
     }
 
     return (
-        <motion.div 
-            className="card h-full p-6 bg-white shadow-sm border border-secondary-200 rounded-xl"
+        <motion.div
+            className="card h-full p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
         >
-            <h3 className="text-lg font-semibold text-secondary-900 mb-6">Recent Actions</h3>
+            <h3 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-primary-400" />
+                Recent Actions
+            </h3>
 
             {loading ? (
                 <div className="flex justify-center py-8">
-                    <Clock className="h-6 w-6 text-secondary-400 animate-spin" />
+                    <Clock className="h-6 w-6 text-primary-500 animate-spin" />
                 </div>
             ) : recentActions.length === 0 ? (
-                <motion.div 
-                    className="text-center py-8 text-secondary-500"
+                <motion.div
+                    className="text-center py-8 text-slate-400"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                 >
@@ -118,15 +121,15 @@ export function RecentActions() {
                     {recentActions.map((action, index) => {
                         const Icon = getStatusIcon(action.status);
                         return (
-                            <motion.div 
-                                key={action.id} 
-                                className="flex items-start space-x-3 p-4 bg-gradient-to-r from-secondary-50 to-white rounded-lg border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group mb-3"
+                            <motion.div
+                                key={action.id}
+                                className="flex items-start space-x-3 p-4 bg-white/5 rounded-xl border border-white/5 hover:border-primary-500/30 hover:bg-white/10 transition-all group mb-3"
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: index * 0.1, duration: 0.3 }}
                                 whileHover={{ x: 5, scale: 1.01 }}
                             >
-                                <motion.div 
+                                <motion.div
                                     className="flex-shrink-0"
                                     whileHover={{ rotate: 15, scale: 1.1 }}
                                 >
@@ -135,16 +138,16 @@ export function RecentActions() {
                                     </div>
                                 </motion.div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-secondary-900 mb-2 group-hover:text-primary-700 transition-colors">
+                                    <p className="text-sm font-semibold text-white mb-2 group-hover:text-primary-400 transition-colors">
                                         {action.action}
                                     </p>
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className="text-xs text-secondary-500 flex items-center">
+                                        <span className="text-xs text-slate-400 flex items-center">
                                             <Clock className="h-3 w-3 mr-1" />
                                             {action.timestamp}
                                         </span>
                                         {action.credits > 0 && (
-                                            <motion.span 
+                                            <motion.span
                                                 className="text-sm font-bold text-primary-600"
                                                 initial={{ scale: 0 }}
                                                 animate={{ scale: 1 }}
@@ -155,7 +158,7 @@ export function RecentActions() {
                                         )}
                                     </div>
                                     <div className="flex items-center">
-                                        <motion.div 
+                                        <motion.div
                                             className={cn("flex items-center px-2.5 py-1 rounded-full text-xs font-medium", getStatusColor(action.status))}
                                             initial={{ scale: 0 }}
                                             animate={{ scale: 1 }}
@@ -172,12 +175,12 @@ export function RecentActions() {
                 </div>
             )}
 
-            <motion.div 
+            <motion.div
                 className="mt-4 pt-4 border-t border-secondary-200"
                 whileHover={{ x: 5 }}
             >
                 <Link to="/actions" className="text-sm text-primary-600 hover:text-primary-700 font-medium inline-flex items-center gap-1 group">
-                    View all actions 
+                    View all actions
                     <motion.span
                         animate={{ x: [0, 5, 0] }}
                         transition={{ duration: 1.5, repeat: Infinity }}

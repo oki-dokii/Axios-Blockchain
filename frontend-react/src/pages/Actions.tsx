@@ -47,11 +47,11 @@ export function Actions() {
     const { isAuthenticated, user } = useUser();
     const { logEcoAction, verifyAction } = useBlockchain();
     const { addNotification } = useNotifications();
-    
+
     const isVerifier = user?.role?.toUpperCase() === 'VERIFIER';
     const isAuditor = user?.role?.toUpperCase() === 'AUDITOR';
     const isCompany = !isVerifier && !isAuditor;
-    
+
     // Debug: Log role info
     useEffect(() => {
         console.log('Actions Page - User role:', user?.role, 'isVerifier:', isVerifier, 'isAuditor:', isAuditor, 'isCompany:', isCompany);
@@ -71,16 +71,17 @@ export function Actions() {
             console.log('[Actions] Loading data - isAuthenticated:', isAuthenticated, 'isVerifier:', isVerifier, 'isAuditor:', isAuditor);
             let actionsRes;
             if (isVerifier || isAuditor) {
-                // Verifiers and Auditors see pending actions
-                console.log('[Actions] Loading pending actions for verifier/auditor');
-                actionsRes = await api.getActions(1, 100, 'PENDING');
+                // Verifiers and Auditors see ALL actions (Global History + Pending)
+                // Backend now handles permission check to show global list
+                console.log('[Actions] Loading global actions for verifier/auditor');
+                actionsRes = await api.getActions(1, 100);
             } else {
                 // Companies see their own actions (backend filters by company if authenticated)
                 console.log('[Actions] Loading actions for company user');
                 actionsRes = isAuthenticated ? await api.getActions(1, 100) : { data: [] };
             }
             console.log('[Actions] API response:', actionsRes);
-            
+
             let typesRes: ActionType[] = [];
             try {
                 typesRes = await api.getActionTypes();
@@ -93,7 +94,7 @@ export function Actions() {
                 console.error('Failed to load action types:', error);
                 typesRes = [];
             }
-            
+
             const actionsData = actionsRes.data || actionsRes.actions || [];
             console.log('[Actions] Actions data array length:', actionsData.length, 'data:', actionsData);
             const mappedActions: EcoAction[] = actionsData.map((a: {
@@ -119,9 +120,16 @@ export function Actions() {
                 company: a.company ? { name: a.company.name } : undefined,
                 actionType: a.actionType
             }));
-            
+
+            // Sort: Pending first, then by date descending
+            const sortedActions = mappedActions.sort((a, b) => {
+                if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+                if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+
             console.log('[Actions] Successfully loaded', mappedActions.length, 'actions');
-            setActions(mappedActions);
+            setActions(sortedActions);
             setActionTypes(typesRes);
         } catch (error) {
             console.error('[Actions] Failed to load data:', error);
@@ -138,7 +146,7 @@ export function Actions() {
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         e.stopPropagation(); // Prevent event bubbling
-        
+
         if (!isAuthenticated) {
             addNotification('error', 'Please log in to submit an action');
             return;
@@ -164,10 +172,10 @@ export function Actions() {
 
         setSubmitting(true);
         try {
-            const selectedType = Array.isArray(actionTypes) 
+            const selectedType = Array.isArray(actionTypes)
                 ? actionTypes.find(t => t.type === formData.actionType || t.id === formData.actionType)
                 : null;
-            
+
             // Submit to backend (don't execute blockchain yet - wait for verification)
             console.log('[Actions] Submitting action:', {
                 actionType: formData.actionType,
@@ -175,20 +183,20 @@ export function Actions() {
                 quantity: parseInt(formData.quantity, 10),
                 unit: formData.unit || selectedType?.unit || 'unit'
             });
-            
+
             const submittedAction = await api.submitAction({
                 actionType: formData.actionType,
                 description: formData.description,
                 quantity: parseInt(formData.quantity, 10),
                 unit: formData.unit || selectedType?.unit || 'unit'
             });
-            
+
             console.log('[Actions] Action submitted successfully:', submittedAction);
 
             addNotification('success', 'Action submitted successfully! A verifier will review it before blockchain execution.');
             setShowModal(false);
             setFormData({ actionType: '', description: '', quantity: '', unit: '', evidence: '' });
-            
+
             // Wait a moment for database to be updated, then reload
             setTimeout(async () => {
                 console.log('[Actions] Reloading actions after submission...');
@@ -207,11 +215,11 @@ export function Actions() {
     const getStatusIcon = (status: string) => {
         switch (status) {
             case 'VERIFIED':
-                return <CheckCircle className="text-green-600" size={20} />;
+                return <CheckCircle className="text-emerald-400" size={20} />;
             case 'PENDING':
-                return <Clock className="text-yellow-600" size={20} />;
+                return <Clock className="text-yellow-400" size={20} />;
             case 'REJECTED':
-                return <XCircle className="text-red-600" size={20} />;
+                return <XCircle className="text-red-400" size={20} />;
             default:
                 return null;
         }
@@ -220,13 +228,13 @@ export function Actions() {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'VERIFIED':
-                return 'bg-green-100 text-green-800';
+                return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
             case 'PENDING':
-                return 'bg-yellow-100 text-yellow-800';
+                return 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20';
             case 'REJECTED':
-                return 'bg-red-100 text-red-800';
+                return 'bg-red-500/10 text-red-400 border border-red-500/20';
             default:
-                return 'bg-gray-100 text-gray-800';
+                return 'bg-slate-500/10 text-slate-400 border border-slate-500/20';
         }
     };
 
@@ -238,29 +246,29 @@ export function Actions() {
 
         try {
             setSubmitting(true);
-            console.log('Verifying action:', { 
-                actionId: selectedActionForVerification.id, 
-                approved, 
-                comments 
+            console.log('Verifying action:', {
+                actionId: selectedActionForVerification.id,
+                approved,
+                comments
             });
-            
+
             // First, verify via backend API
             const response = await api.verifyAction(selectedActionForVerification.id, approved, comments);
             console.log('Backend verification response:', response);
-            
+
             // Execute blockchain smart contract AFTER verification approval
             if (approved) {
                 try {
-                    const actualCredits = response?.action?.creditsAwarded || 
-                                         selectedActionForVerification.creditsEarned || 
-                                         selectedActionForVerification.estimatedCredits || 0;
-                    
+                    const actualCredits = response?.action?.creditsAwarded ||
+                        selectedActionForVerification.creditsEarned ||
+                        selectedActionForVerification.estimatedCredits || 0;
+
                     if (actualCredits > 0) {
                         // Get blockchain action ID from database response
-                        let blockchainActionId = response?.action?.blockchainActionId || 
-                                                response?.blockchainActionId ||
-                                                selectedActionForVerification.blockchainActionId;
-                        
+                        let blockchainActionId = response?.action?.blockchainActionId ||
+                            response?.blockchainActionId ||
+                            selectedActionForVerification.blockchainActionId;
+
                         // Step 1: If not logged yet, log the action to blockchain first
                         if (!blockchainActionId) {
                             addNotification('info', 'Logging action to blockchain...');
@@ -271,14 +279,14 @@ export function Actions() {
                                 'Global',
                                 selectedActionForVerification.actionType || selectedActionForVerification.type || 'Other'
                             );
-                            
+
                             if (logTx) {
                                 const receipt = await logTx.wait();
                                 // Extract action ID from event logs
-                                const ecoLedgerInterface = new ethers.Interface([
+                                const ecoLedgerInterface = new Interface([
                                     'event EcoActionLogged(uint256 indexed actionId, address indexed company, string title, string category)'
                                 ]);
-                                
+
                                 let foundActionId: number | null = null;
                                 for (const log of receipt.logs) {
                                     try {
@@ -294,7 +302,7 @@ export function Actions() {
                                         // Not the event we're looking for
                                     }
                                 }
-                                
+
                                 if (foundActionId) {
                                     blockchainActionId = foundActionId;
                                     // Update backend with blockchain action ID
@@ -307,7 +315,7 @@ export function Actions() {
                                 addNotification('info', `Action logged to blockchain with ID: ${foundActionId || 'pending'}...`);
                             }
                         }
-                        
+
                         // Step 2: Verify on blockchain to mint credits
                         if (blockchainActionId) {
                             const verifyTx = await verifyAction(Number(blockchainActionId), true, actualCredits);
@@ -318,8 +326,8 @@ export function Actions() {
                                 await api.updateActionBlockchain(selectedActionForVerification.id, {
                                     txHash: verifyTx.hash
                                 });
-                        }
-                    } else {
+                            }
+                        } else {
                             addNotification('warning', 'Action verified in database. Blockchain action ID not found. Please check blockchain connection.');
                         }
                     }
@@ -329,7 +337,7 @@ export function Actions() {
                     addNotification('warning', `Action verified in database, but blockchain execution failed: ${errorMsg}`);
                 }
             }
-            
+
             addNotification('success', `Action ${approved ? 'approved' : 'rejected'} successfully`);
             setShowVerificationModal(false);
             setSelectedActionForVerification(null);
@@ -374,22 +382,22 @@ export function Actions() {
             />
             <div className="flex justify-between items-center mb-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-secondary-900">
+                    <h1 className="text-3xl font-bold text-white">
                         {isVerifier ? 'Pending Verifications' : isAuditor ? 'Action Audits' : 'Eco Actions'}
                     </h1>
-                    <p className="mt-2 text-secondary-600">
-                        {isVerifier 
+                    <p className="mt-2 text-slate-400">
+                        {isVerifier
                             ? 'Review and verify eco actions submitted by companies.'
                             : isAuditor
-                            ? 'Audit and monitor all platform actions for compliance.'
-                            : 'Submit your eco-friendly actions to earn carbon credits.'}
+                                ? 'Audit and monitor all platform actions for compliance.'
+                                : 'Submit your eco-friendly actions to earn carbon credits.'}
                     </p>
                 </div>
 
                 {!(isVerifier || isAuditor) && (
                     <button
                         type="button"
-                        className="flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-all shadow-lg font-semibold text-base hover:scale-105 disabled:opacity-50"
+                        className="flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-500 transition-all shadow-lg font-semibold text-base hover:scale-105 disabled:opacity-50 hover:shadow-primary-500/20"
                         onClick={() => {
                             if (!isAuthenticated) {
                                 addNotification('info', 'Redirecting to login...');
@@ -410,66 +418,112 @@ export function Actions() {
 
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-secondary-200">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-green-100 text-green-600 rounded-lg">
-                            <Leaf size={24} />
+                {(isVerifier || isAuditor) ? (
+                    <>
+                        <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-yellow-500/10 text-yellow-400 rounded-xl">
+                                    <Clock size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Pending Review</p>
+                                    <p className="text-2xl font-bold text-white">{actions.length}</p>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-sm text-secondary-500">Total Actions</p>
-                            <p className="text-2xl font-bold text-secondary-900">{actions.length}</p>
-                        </div>
-                    </div>
-                </div>
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-secondary-200">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
-                            <CheckCircle size={24} />
+                        <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                                    <Leaf size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Estimated Impact</p>
+                                    <p className="text-2xl font-bold text-white">
+                                        {actions.reduce((sum, a) => sum + (a.estimatedCredits || 0), 0).toLocaleString()}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-sm text-secondary-500">Verified</p>
-                            <p className="text-2xl font-bold text-secondary-900">
-                                {actions.filter(a => a.status === 'VERIFIED').length}
-                            </p>
-                        </div>
-                    </div>
-                </div>
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-secondary-200">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-purple-100 text-purple-600 rounded-lg">
-                            <Leaf size={24} />
+                        <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl">
+                                    <CheckCircle size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Ready to Verify</p>
+                                    <p className="text-2xl font-bold text-white">
+                                        {actions.length > 0 ? 'Active' : 'Caught Up'}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-sm text-secondary-500">Credits Earned</p>
-                            <p className="text-2xl font-bold text-secondary-900">
-                                {actions.reduce((sum, a) => sum + (a.status === 'VERIFIED' ? a.creditsEarned : 0), 0)}
-                            </p>
+                    </>
+                ) : (
+                    <>
+                        <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                                    <Leaf size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Total Actions</p>
+                                    <p className="text-2xl font-bold text-white">{actions.length}</p>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
+
+                        <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl">
+                                    <CheckCircle size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Verified</p>
+                                    <p className="text-2xl font-bold text-white">
+                                        {actions.filter(a => a.status === 'VERIFIED').length}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white/5 backdrop-blur-xl p-6 rounded-2xl border border-white/10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl">
+                                    <Leaf size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Credits Earned</p>
+                                    <p className="text-2xl font-bold text-white">
+                                        {actions.reduce((sum, a) => sum + (a.status === 'VERIFIED' ? a.creditsEarned : 0), 0)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Actions List */}
             {loading ? (
                 <div className="flex justify-center py-12">
-                    <Loader2 size={40} className="animate-spin text-primary-600" />
+                    <Loader2 size={40} className="animate-spin text-primary-500" />
                 </div>
             ) : actions.length === 0 ? (
-                <div className="text-center py-16 bg-white rounded-xl shadow-sm border border-secondary-200">
-                    <Leaf size={64} className="mx-auto text-secondary-300 mb-6" />
-                    <h3 className="text-xl font-semibold text-secondary-900 mb-2">
+                <div className="text-center py-16 bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10">
+                    <Leaf size={64} className="mx-auto text-slate-600 mb-6" />
+                    <h3 className="text-xl font-semibold text-white mb-2">
                         {isVerifier ? 'No pending actions to verify' : isAuditor ? 'No actions to audit' : 'No actions yet'}
                     </h3>
-                    <p className="text-secondary-500 text-lg mb-8">
+                    <p className="text-slate-400 text-lg mb-8">
                         {isVerifier || isAuditor ? 'All actions have been processed' : 'Submit your first eco-friendly action!'}
                     </p>
                     {/* Always show button unless explicitly verifier or auditor */}
                     {!(isVerifier || isAuditor) ? (
                         <button
                             type="button"
-                            className="inline-flex items-center justify-center gap-3 bg-primary-600 text-white px-8 py-4 rounded-xl hover:bg-primary-700 transition-all shadow-xl font-semibold text-lg hover:scale-105 transform disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center gap-3 bg-primary-600 text-white px-8 py-4 rounded-xl hover:bg-primary-500 transition-all shadow-xl font-semibold text-lg hover:scale-105 transform disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-primary-500/20"
                             onClick={() => {
                                 console.log('Button clicked - isAuthenticated:', isAuthenticated);
                                 if (!isAuthenticated) {
@@ -482,50 +536,49 @@ export function Actions() {
                                 setShowModal(true);
                             }}
                             disabled={loading}
-                            style={{ display: 'block', visibility: 'visible' }}
                         >
                             <Plus size={24} />
                             {isAuthenticated ? 'Log Your First Eco Action' : 'Log In to Submit Action'}
                         </button>
                     ) : (
-                        <div className="text-sm text-secondary-500">
+                        <div className="text-sm text-slate-500">
                             {isVerifier ? 'Verifiers review actions' : 'Auditors monitor actions'}
                         </div>
                     )}
                 </div>
             ) : (
-                <div className="bg-white rounded-xl shadow-sm border border-secondary-200 overflow-hidden">
-                    <table className="min-w-full divide-y divide-secondary-200">
-                        <thead className="bg-secondary-50">
+                <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden">
+                    <table className="min-w-full divide-y divide-white/10">
+                        <thead className="bg-white/5">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase">Type</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase">Description</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Type</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Description</th>
                                 {(isVerifier || isAuditor) && (
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase">Company</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Company</th>
                                 )}
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase">Credits</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase">Status</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase">Date</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Credits</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Date</th>
                                 {(isVerifier || isAuditor) && (
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase">Actions</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Actions</th>
                                 )}
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-secondary-200">
+                        <tbody className="divide-y divide-white/10">
                             {actions.map((action) => (
-                                <tr key={action.id} className="hover:bg-secondary-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-secondary-900">
+                                <tr key={action.id} className="hover:bg-white/5 transition-colors">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
                                         {action.type || action.actionType?.name || 'N/A'}
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-secondary-500">
+                                    <td className="px-6 py-4 text-sm text-slate-400">
                                         {action.description}
                                     </td>
                                     {(isVerifier || isAuditor) && (
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-700">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
                                             {action.company?.name || action.companyName || 'Unknown'}
                                         </td>
                                     )}
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-emerald-400 font-medium">
                                         {action.creditsEarned || action.estimatedCredits || 0}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
@@ -536,7 +589,7 @@ export function Actions() {
                                             </span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                                         {new Date(action.createdAt || action.timestamp).toLocaleDateString()}
                                     </td>
                                     {(isVerifier || isAuditor) && action.status === 'PENDING' && (
@@ -544,7 +597,7 @@ export function Actions() {
                                             <button
                                                 onClick={() => openVerificationModal(action)}
                                                 disabled={submitting}
-                                                className="btn-primary text-sm px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="bg-primary-600/20 text-primary-400 hover:bg-primary-600/30 border border-primary-500/30 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
                                             >
                                                 {submitting ? 'Processing...' : 'Review & Verify'}
                                             </button>
@@ -552,11 +605,10 @@ export function Actions() {
                                     )}
                                     {(isVerifier || isAuditor) && action.status !== 'PENDING' && (
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                                                action.status === 'VERIFIED' 
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : 'bg-red-100 text-red-800'
-                                            }`}>
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${action.status === 'VERIFIED'
+                                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                                }`}>
                                                 {action.status}
                                             </span>
                                         </td>
@@ -572,66 +624,66 @@ export function Actions() {
             {showModal && (
                 <div className="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true" onClick={() => setShowModal(false)}>
                     <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                        <div className="fixed inset-0 bg-secondary-900 bg-opacity-75 transition-opacity" />
+                        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" />
                         <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
-                        <div 
-                            className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full relative z-10"
+                        <div
+                            className="inline-block align-bottom bg-slate-900 rounded-2xl border border-white/10 text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full relative z-10"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()}>
-                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                <div className="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                                     <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-lg leading-6 font-medium text-secondary-900">
+                                        <h3 className="text-xl leading-6 font-bold text-white">
                                             Log New Eco Action
-                                    </h3>
+                                        </h3>
                                         <button
                                             type="button"
                                             onClick={() => setShowModal(false)}
-                                            className="text-secondary-400 hover:text-secondary-600"
+                                            className="text-slate-400 hover:text-white transition-colors"
                                         >
-                                            ×
+                                            <XCircle size={24} />
                                         </button>
                                     </div>
-                                    <p className="text-sm text-secondary-600 mb-4">
+                                    <p className="text-sm text-slate-400 mb-6">
                                         Submit your eco-friendly action. A verifier will review it and execute the blockchain transaction to mint credits.
                                     </p>
                                     <div className="space-y-4">
                                         <div>
-                                            <label htmlFor="actionType" className="block text-sm font-medium text-secondary-700">
+                                            <label htmlFor="actionType" className="block text-sm font-medium text-slate-300 mb-1">
                                                 Action Type *
                                             </label>
                                             <select
                                                 id="actionType"
                                                 value={formData.actionType}
                                                 onChange={(e) => {
-                                                    const selectedType = Array.isArray(actionTypes) 
+                                                    const selectedType = Array.isArray(actionTypes)
                                                         ? actionTypes.find(t => t.type === e.target.value || t.id === e.target.value)
                                                         : null;
-                                                    setFormData({ 
-                                                        ...formData, 
+                                                    setFormData({
+                                                        ...formData,
                                                         actionType: e.target.value,
                                                         unit: selectedType?.unit || ''
                                                     });
                                                 }}
-                                                className="mt-1 block w-full border-secondary-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm px-3 py-2 border"
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder:text-slate-500"
                                                 required
                                             >
-                                                <option value="">Select an action type</option>
+                                                <option value="" className="bg-slate-900 text-slate-400">Select an action type</option>
                                                 {Array.isArray(actionTypes) && actionTypes.length > 0 ? (
                                                     actionTypes.map((type) => (
-                                                        <option key={type.id} value={type.type || type.id}>
-                                                            {type.label || type.name || type.type} 
+                                                        <option key={type.id} value={type.type || type.id} className="bg-slate-900 text-white">
+                                                            {type.label || type.name || type.type}
                                                             {type.defaultCreditsPerUnit || type.baseCredits ? ` (~${(type.defaultCreditsPerUnit || type.baseCredits || 0)} credits/${type.unit || 'unit'})` : ''}
-                                                    </option>
+                                                        </option>
                                                     ))
                                                 ) : (
-                                                    <option value="" disabled>Loading action types...</option>
+                                                    <option value="" disabled className="bg-slate-900">Loading action types...</option>
                                                 )}
                                             </select>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label htmlFor="quantity" className="block text-sm font-medium text-secondary-700">
+                                                <label htmlFor="quantity" className="block text-sm font-medium text-slate-300 mb-1">
                                                     Quantity *
                                                 </label>
                                                 <input
@@ -641,13 +693,13 @@ export function Actions() {
                                                     onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
                                                     min="1"
                                                     step="1"
-                                                    className="mt-1 block w-full border-secondary-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm px-3 py-2 border"
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder:text-slate-500"
                                                     placeholder="0"
                                                     required
                                                 />
                                             </div>
                                             <div>
-                                                <label htmlFor="unit" className="block text-sm font-medium text-secondary-700">
+                                                <label htmlFor="unit" className="block text-sm font-medium text-slate-300 mb-1">
                                                     Unit *
                                                 </label>
                                                 <input
@@ -655,14 +707,14 @@ export function Actions() {
                                                     id="unit"
                                                     value={formData.unit}
                                                     onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                                                    className="mt-1 block w-full border-secondary-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm px-3 py-2 border"
-                                                    placeholder="kg, trees, kWh, etc."
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder:text-slate-500"
+                                                    placeholder="kg, trees, etc."
                                                     required
                                                 />
                                             </div>
                                         </div>
                                         <div>
-                                            <label htmlFor="description" className="block text-sm font-medium text-secondary-700">
+                                            <label htmlFor="description" className="block text-sm font-medium text-slate-300 mb-1">
                                                 Description *
                                             </label>
                                             <textarea
@@ -670,17 +722,17 @@ export function Actions() {
                                                 value={formData.description}
                                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                                 rows={4}
-                                                className="mt-1 block w-full border-secondary-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm px-3 py-2 border"
-                                                placeholder="Describe your eco-friendly action in detail (min 10 characters)..."
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder:text-slate-500 resize-none"
+                                                placeholder="Describe your eco-friendly action in detail..."
                                                 required
                                                 minLength={10}
                                             />
-                                            <p className="mt-1 text-xs text-secondary-500">
-                                                {formData.description.length}/500 characters
+                                            <p className="mt-1 text-xs text-slate-500 text-right">
+                                                {formData.description.length}/500
                                             </p>
                                         </div>
                                         <div>
-                                            <label htmlFor="evidence" className="block text-sm font-medium text-secondary-700">
+                                            <label htmlFor="evidence" className="block text-sm font-medium text-slate-300 mb-1">
                                                 Evidence (Optional)
                                             </label>
                                             <input
@@ -688,36 +740,33 @@ export function Actions() {
                                                 id="evidence"
                                                 value={formData.evidence}
                                                 onChange={(e) => setFormData({ ...formData, evidence: e.target.value })}
-                                                className="mt-1 block w-full border-secondary-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm px-3 py-2 border"
-                                                placeholder="Link to proof, photos, or documentation"
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder:text-slate-500"
+                                                placeholder="Link to proof (URL)"
                                             />
-                                            <p className="mt-1 text-xs text-secondary-500">
-                                                Provide evidence to speed up verification
-                                            </p>
                                         </div>
                                         {formData.actionType && formData.quantity && Array.isArray(actionTypes) && (
-                                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                                <p className="text-sm font-medium text-green-900">Estimated Credits:</p>
-                                                <p className="text-2xl font-bold text-green-600">
+                                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
+                                                <p className="text-sm font-medium text-emerald-400">Estimated Credits:</p>
+                                                <p className="text-2xl font-bold text-white">
                                                     {(() => {
                                                         const selectedType = actionTypes.find(t => (t.type === formData.actionType || t.id === formData.actionType));
                                                         if (!selectedType || !formData.quantity) return '0';
                                                         const creditsPerUnit = selectedType.defaultCreditsPerUnit || selectedType.baseCredits || selectedType.minCreditsPerUnit || 0;
                                                         const credits = creditsPerUnit * parseInt(formData.quantity, 10);
                                                         return credits.toLocaleString();
-                                                    })()} credits
+                                                    })()} <span className="text-sm font-normal text-emerald-400">credits</span>
                                                 </p>
-                                                <p className="text-xs text-green-700 mt-1">
-                                                    Final amount will be determined by the verifier
+                                                <p className="text-xs text-emerald-400/70 mt-1">
+                                                    Final amount determined by verifier
                                                 </p>
                                             </div>
                                         )}
                                     </div>
                                 </div>
-                                <div className="bg-secondary-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+                                <div className="bg-white/5 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3 border-t border-white/10">
                                     <button
                                         type="submit"
-                                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-700 sm:w-auto sm:text-sm disabled:opacity-50"
+                                        className="w-full inline-flex justify-center rounded-xl border border-transparent shadow-lg px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-primary-500/20 transition-all"
                                         disabled={submitting}
                                     >
                                         {submitting ? (
@@ -731,7 +780,7 @@ export function Actions() {
                                     </button>
                                     <button
                                         type="button"
-                                        className="mt-3 w-full inline-flex justify-center rounded-md border border-secondary-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-secondary-700 hover:bg-secondary-50 sm:mt-0 sm:w-auto sm:text-sm"
+                                        className="mt-3 w-full inline-flex justify-center rounded-xl border border-white/10 shadow-sm px-4 py-2 bg-white/5 text-base font-medium text-slate-300 hover:bg-white/10 hover:text-white sm:mt-0 sm:w-auto sm:text-sm transition-all"
                                         onClick={() => setShowModal(false)}
                                         disabled={submitting}
                                     >

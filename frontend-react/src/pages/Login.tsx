@@ -18,7 +18,7 @@ export default function Login() {
     // Handle wallet login
     const handleWalletLogin = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
-        
+
         try {
             setLoading(true);
             setError('');
@@ -28,14 +28,8 @@ export default function Login() {
                 return;
             }
 
-            // Check if email and password are provided (required for new users or users missing them)
-            if (!email || !password) {
-                setError('Email and password are required');
-                return;
-            }
-
             // Get nonce
-            const nonceResponse = await api.get(`/auth/nonce/${address}`);
+            const nonceResponse = await api.get<{ message: string }>(`/auth/nonce/${address}`);
             const { message } = nonceResponse;
 
             // Request signature from MetaMask
@@ -46,13 +40,12 @@ export default function Login() {
                 params: [message, address]
             });
 
-            // Verify signature and login (with email/password if needed)
+            // Verify signature and login
+            // Email and password are NOT sent for pure wallet auth
             const response = await api.post<{ user: { id: string; walletAddress: string; name: string; verified: boolean }; token: string }>('/auth/verify', {
                 walletAddress: address,
                 signature,
-                message,
-                email,
-                password
+                message
             });
 
             login(response.user, response.token);
@@ -97,12 +90,12 @@ export default function Login() {
             });
 
             console.log('[Login] Backend response received:', response);
-            
+
             // Validate response structure
             if (!response || !response.user || !response.token) {
                 throw new Error('Invalid response format from server');
             }
-            
+
             // Map backend response to frontend User format
             // Backend returns: { token, user: { id, email, role, walletAddress, emailVerified, company: { id, name, verified } } }
             const userData = {
@@ -124,9 +117,9 @@ export default function Login() {
 
             console.log('[Login] Mapped user data:', userData);
             console.log('[Login] Calling login function with token length:', response.token.length);
-            
+
             login(userData, response.token);
-            
+
             console.log('[Login] Login function called successfully, navigating...');
             // Use setTimeout to ensure state updates are processed
             setTimeout(() => {
@@ -141,9 +134,9 @@ export default function Login() {
                 response: (err as any)?.response,
                 status: (err as any)?.status
             });
-            
+
             const errorMessage = err instanceof Error ? err.message : 'Invalid credentials';
-            
+
             // If error indicates wallet is required and not connected, prompt user
             if ((errorMessage.includes('wallet') || errorMessage.includes('Wallet')) && !address) {
                 setError('Please connect your wallet to complete login. Click "Connect Wallet" above.');
@@ -176,7 +169,7 @@ export default function Login() {
                         <h1 className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-2">
                             Welcome Back
                         </h1>
-                        <p className="text-gray-600">Sign in to continue to EcoCred</p>
+                        <p className="text-gray-600">Sign in to continue to EcoLedger</p>
                     </div>
 
                     {/* Main Card */}
@@ -190,8 +183,8 @@ export default function Login() {
                             <button
                                 onClick={() => setActiveTab('wallet')}
                                 className={`relative flex-1 py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${activeTab === 'wallet'
-                                        ? 'text-green-600'
-                                        : 'text-gray-600 hover:text-gray-900'
+                                    ? 'text-green-600'
+                                    : 'text-gray-600 hover:text-gray-900'
                                     }`}
                             >
                                 <span className="flex items-center justify-center gap-2">
@@ -202,8 +195,8 @@ export default function Login() {
                             <button
                                 onClick={() => setActiveTab('email')}
                                 className={`relative flex-1 py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${activeTab === 'email'
-                                        ? 'text-green-600'
-                                        : 'text-gray-600 hover:text-gray-900'
+                                    ? 'text-green-600'
+                                    : 'text-gray-600 hover:text-gray-900'
                                     }`}
                             >
                                 <span className="flex items-center justify-center gap-2">
@@ -231,7 +224,7 @@ export default function Login() {
                                         <span className="text-3xl">🦊</span>
                                         <div>
                                             <p className="font-semibold text-blue-900 mb-1">Connect Your Wallet</p>
-                                            <p className="text-sm text-blue-700">Sign in with your wallet and provide your email/password to complete authentication.</p>
+                                            <p className="text-sm text-blue-700">Sign in securely using your Web3 wallet signature.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -267,49 +260,6 @@ export default function Login() {
                                     </div>
                                 )}
 
-                                {/* Email and Password fields for wallet login */}
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <label htmlFor="wallet-email" className="block text-sm font-semibold text-gray-700">
-                                            Email Address *
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                id="wallet-email"
-                                                type="email"
-                                                value={email}
-                                                onChange={(e) => setEmail(e.target.value)}
-                                                required
-                                                className="w-full px-4 py-3 pl-11 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/20 focus:border-green-500 transition-all duration-300 outline-none"
-                                                placeholder="you@example.com"
-                                            />
-                                            <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">
-                                                📧
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label htmlFor="wallet-password" className="block text-sm font-semibold text-gray-700">
-                                            Password *
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                id="wallet-password"
-                                                type="password"
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                required
-                                                className="w-full px-4 py-3 pl-11 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/20 focus:border-green-500 transition-all duration-300 outline-none"
-                                                placeholder="••••••••"
-                                            />
-                                            <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">
-                                                🔒
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
                                 <button
                                     type="submit"
                                     disabled={loading || !address}
@@ -317,6 +267,7 @@ export default function Login() {
                                 >
                                     <div className="absolute inset-0 bg-gradient-to-r from-green-700 to-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                                     <span className="relative flex items-center justify-center gap-2">
+
                                         {loading ? (
                                             <>
                                                 <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
