@@ -1,0 +1,13 @@
+{
+    "version": 2,
+    "framework": null,
+    "buildCommand": "cd backend && npm run build",
+    "installCommand": "cd backend && npm install",
+    "outputDirectory": "backend/dist",
+    "rewrites": [
+        {
+            "source": "/(.*)",
+            "destination": "/backend/src/server.ts"
+        }
+    ]
+}
